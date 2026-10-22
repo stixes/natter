@@ -1,0 +1,4 @@
+#!/bin/sh
+# docker -> podman shim, placed on PATH by scripts/with-container-env.sh
+# only on the Podman branch. Do not use when a real Docker daemon exists.
+exec podman "$@"
