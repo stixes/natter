@@ -43,6 +43,16 @@ We compete on subtraction. Every feature we refuse to build is the product.
 - No emulator inside the container (GPU/accel pain); debug on-device via adb forwarded from the host
 - `flutter analyze && flutter test` must pass inside the container on any commit; integration tests via `integration_test` on a connected device
 
+## Publishing hygiene
+
+The remote is public, so every commit is **publishable** material: hosts, addresses, devices, machines, and people read as placeholders in anything committed, including docs, validation records, and test fixtures.
+
+- Vocabulary: `<llama-swap-host>`, `<dev-box>`, `<tls-front-host>`, `<device>`; example base URLs use RFC 5737 documentation space (`192.0.2.0/24`); hosting is described generically ("the HTTPS front") rather than by tunnel or product name
+- Command blocks say the angle brackets are placeholders, since they are not shell-safe as written
+- Endpoint URLs, models, and keys for on-device rounds arrive through `--dart-define`, so they never land in a committed file
+- A leak is rewritten out of history and force-pushed, not layered over: a follow-up commit leaves the old blob public
+- Verification scans commits and the published file, never the working copy: every blob in `git rev-list --all`, then the same scan over the pushed tree
+
 ## Spec workflow (OpenSpec)
 
 Layout: `openspec/project.md` (context), `openspec/specs/` (truth), `openspec/changes/` (in-flight proposals).
@@ -60,6 +70,7 @@ Rules:
 - Spec delta updated, tests green, streaming edge cases handled (cancel, mid-stream error, retry, malformed SSE)
 - No new permissions, no new network calls beyond what the proposal states
 - Changelog entry (user-facing wording, not commit-speak)
+- Publishable scan clean on every commit (Publishing hygiene)
 
 ## Tone and polish bar
 
