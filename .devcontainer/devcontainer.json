@@ -1,0 +1,22 @@
+{
+  "name": "natter-dev",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "workspaceFolder": "/workspaces/natter",
+  "remoteUser": "root",
+  "runArgs": [
+    "--security-opt",
+    "label=disable",
+    "--add-host",
+    "host.docker.internal:host-gateway"
+  ],
+  "mounts": [
+    "source=natter-gradle-cache,target=/root/.gradle,type=volume",
+    "source=natter-pub-cache,target=/root/.pub-cache,type=volume"
+  ],
+  "containerEnv": {
+    "PUB_CACHE": "/root/.pub-cache",
+    "GRADLE_USER_HOME": "/root/.gradle"
+  }
+}
