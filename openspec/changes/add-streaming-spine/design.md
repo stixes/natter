@@ -8,7 +8,7 @@ See proposal.md - Why. The repo is greenfield: no Flutter project, code, or spec
 
 **Goals:**
 - One end-to-end path: configure an endpoint, send a chat request, stream and render an assistant reply smoothly on Android.
-- Prove the compat + ChatGPT-quality streaming bet on real llama.cpp and OpenRouter endpoints.
+- Prove the compat + ChatGPT-quality streaming bet on real endpoints. For this change that means a live llama.cpp-family endpoint on a device; the hosted-provider leg is deferred (see Decisions).
 - Establish an architecture that profiles (change #2) and history (change #3) extend rather than replace.
 
 **Non-Goals:**
@@ -36,10 +36,12 @@ See proposal.md - Why. The repo is greenfield: no Flutter project, code, or spec
 
 - **Android only.** Framework does not block iOS, but nothing here targets iOS polish; validation is on an Android device.
 
+- **OpenRouter (second-provider) validation is deferred out of this change.** The reasoning-field superset (`reasoning_content` vs `reasoning`) has therefore only been proven against a llama.cpp-family gateway, not against an OpenRouter-shaped dialect, and no TLS-on-device path was observed either (the test device could not resolve the HTTPS front hostname). Rationale: MVP is BYO-endpoint with no hosted-provider requirement, no key was available, and holding a task-complete slice open on it buys nothing. The debt is explicit: the next change that touches provider differences (profiles, or any change that adds a hosted provider) owes an on-device round against a second provider, including one that requires an API key, using the harness under `integration_test/`. `validation.md` in this change records exactly which rounds ran and which did not.
+
 ## Risks / Trade-offs
 
 - Throwaway config UI: the single-endpoint screen is later superseded by profiles. Mitigation: shape it as one profile from the start; rework is small.
-- Mid-stream error / malformed SSE handling is where compat clients usually break. Mitigation: explicit edge-case requirements (cancel, error, retry, blank-answer) are acceptance criteria, validated on real llama.cpp + OpenRouter.
+- Mid-stream error / malformed SSE handling is where compat clients usually break. Mitigation: explicit edge-case requirements (cancel, error, retry, blank-answer) are acceptance criteria, validated on a real llama.cpp-family endpoint; the second-provider leg of that validation is deferred, so dialect coverage is thinner than originally planned (see Decisions).
 - Superset parse could mis-handle a future dialect where both fields mean different things. Mitigation: v1 takes whichever is present; profile-level field policy is the named later escape hatch.
 - Ephemeral state means "history is sacred" is not yet satisfied. Accepted: this slice targets the product bet; persistence is change #3.
 

@@ -59,8 +59,12 @@ Recording this because the opposite assumption nearly produced a config change.
 
 ## Still open
 
-- **7.2 OpenRouter**, including a reasoning model, is not run: it needs a key for
-  a second provider, which has not been supplied.
+- **OpenRouter is not run.** Descoped from this change on purpose: MVP is BYO-endpoint
+  with no hosted-provider requirement, and no key was available. Consequence, stated
+  plainly: the `reasoning_content` vs `reasoning` superset is proven only against a
+  llama.cpp-family gateway, and no provider that *requires* an API key has been driven
+  from a device. The next change that touches provider differences owes that round,
+  and this harness is the vehicle for it.
 - **TLS on the device is unverified.** Every round above ran against a plain HTTP
   LAN endpoint. The HTTPS front (`https://<tls-front-host>:8443/v1`,
   Let's Encrypt cert) was unreachable from the phone: the tunnel carries traffic
@@ -68,5 +72,6 @@ Recording this because the opposite assumption nearly produced a config change.
   TLS-path behaviour has been observed on Android. One 7.1 round against that URL
   would close it.
 - **No connect timeout.** With DNS failing, the draft sat at `Waiting.` for more
-  than two minutes with no error surfaced. Fixing it is a user-visible behaviour
-  change, so it belongs in its own proposal, not in this change.
+  than two minutes with no error surfaced. That is a user-visible behaviour change,
+  so it is not fixed here: it is proposed as `add-endpoint-timeouts`, which also
+  owes the on-device rounds for a black-holed endpoint and a stalled stream.

@@ -37,7 +37,7 @@
 ## 7. On-device integration (Android)
 
 - [x] 7.1 Validate end-to-end against a live llama.cpp endpoint: a plain model streams token-by-token, and a qwen3 thinking model shows Waiting -> Thinking -> answer with reasoning hidden; verify by running on a connected Android device (see `validation.md`; the round that would cover TLS on the device is still open, see "Still open" there)
-- [ ] 7.2 Validate end-to-end against OpenRouter including a reasoning model; verify by running on a connected Android device (blocked: needs an OpenRouter key, and the app's keyless-endpoint fix must be re-validated against a provider that does require one)
+- ~~7.2 Validate end-to-end against OpenRouter including a reasoning model; verify by running on a connected Android device~~ descoped from this change: MVP has no hosted-provider requirement and no OpenRouter key was available. Recorded as a decision in design.md and as explicit debt for the next change that touches provider differences.
 - [x] 7.3 Exercise cancel, mid-stream error, retry, and blank-answer fallback on-device; verify each behaves per spec (all four pass, the fallback against the mock endpoint in `integration_test/support/`; a thinking-phase cancel commits nothing, which is now a pinned spec scenario)
 
 ## Workflow follow-up
