@@ -68,9 +68,9 @@ Recording this because the opposite assumption nearly produced a config change.
   from a device. The next change that touches provider differences owes that round,
   and this harness is the vehicle for it.
 - **TLS on the device is unverified.** Every round above ran against a plain HTTP
-  LAN endpoint. The HTTPS front (`https://<tls-front-host>:8443/v1`,
-  Let's Encrypt cert) was unreachable from the phone: the tunnel carries traffic
-  but the phone does not resolve that name, so no cert-validation or
+  LAN endpoint. The HTTPS front for the same box (`https://<tls-front-host>:8443/v1`,
+  Let's Encrypt cert) was unreachable from the phone: that front carries traffic
+  but the phone does not resolve its name, so no cert-validation or
   TLS-path behaviour has been observed on Android. One 7.1 round against that URL
   would close it.
 - **No connect timeout.** With DNS failing, the draft sat at `Waiting.` for more
