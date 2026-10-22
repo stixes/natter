@@ -21,5 +21,5 @@ rules:
   tasks:
     - A task that touches the network path closes with an on-device round
       against a live endpoint, recorded in validation.md under the change
-    - Every task states the check that closes it: a command, or a behaviour
+    - Every task names the check that closes it, a command or a behaviour
       observed on the device
