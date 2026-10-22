@@ -7,11 +7,15 @@ Defines the chat screen's request and stream lifecycle against a user-configured
 ## ADDED Requirements
 
 ### Requirement: Single-endpoint configuration
-The app SHALL provide a minimal configuration screen where the user sets one base URL, one API key, and one model name, and SHALL use that configuration for chat requests. The API key MUST be stored in secure, keystore-backed storage and MUST NOT be written to conversation storage, logs, or plain settings.
+The app SHALL provide a minimal configuration screen where the user sets one base URL, one API key, and one model name, and SHALL use that configuration for chat requests. The API key MUST be stored in secure, keystore-backed storage and MUST NOT be written to conversation storage, logs, or plain settings. The API key SHALL be optional: an endpoint that requires no authentication MUST be usable.
 
 #### Scenario: Configure and use an endpoint
 - **WHEN** the user enters a base URL, API key, and model name and returns to the chat screen
 - **THEN** subsequent chat requests are sent to that base URL with that key and model
+
+#### Scenario: An endpoint that needs no key
+- **WHEN** the user sets a base URL and a model name and leaves the API key empty
+- **THEN** the endpoint counts as configured, Send is enabled, and the request carries no `Authorization` header at all
 
 #### Scenario: API key is not persisted in the clear
 - **WHEN** the app stores the configured API key
@@ -67,6 +71,10 @@ The app SHALL let the user cancel an in-flight stream, SHALL surface an error an
 #### Scenario: Cancel mid-stream
 - **WHEN** the user cancels while a reply is streaming
 - **THEN** streaming stops and the partial state does not corrupt the conversation
+
+#### Scenario: Cancel before any answer text arrives
+- **WHEN** the user cancels while only reasoning has streamed
+- **THEN** no assistant turn is committed and the conversation is unchanged, because half a chain of thought is not an answer
 
 #### Scenario: Mid-stream error
 - **WHEN** the stream fails after some output

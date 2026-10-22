@@ -105,8 +105,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
                 child: Text(
-                  'No endpoint configured. Open Settings to set a base URL, '
-                  'API key, and model.',
+                  'No endpoint configured. Open Settings to set a base URL '
+                  'and model.',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.disabledColor,
                   ),

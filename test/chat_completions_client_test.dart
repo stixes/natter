@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:natter/data/chat_completions_client.dart';
+import 'package:natter/domain/endpoint_profile.dart';
 import 'package:natter/domain/chat_message.dart';
 
 import 'support/test_support.dart';
@@ -157,6 +158,29 @@ data: [DONE]
       {'role': 'user', 'content': 'a'},
       {'role': 'assistant', 'content': 'b'},
     ]);
+  });
+
+  test('an empty api key sends no authorization header at all', () async {
+    // Local llama.cpp and llama-swap servers are the app's headline use case
+    // and they accept unauthenticated requests.
+    http.BaseRequest? seen;
+    final client = ChatCompletionsClient(
+      httpClient: streamingClient(onRequest: (request, _) => seen = request),
+    );
+
+    await client
+        .stream(
+          profile: const EndpointProfile(
+            baseUrl: 'http://127.0.0.1:8080/v1',
+            model: 'qwen3-test',
+          ),
+          messages: const [ChatMessage(role: ChatRole.user, content: 'a')],
+        )
+        .toList();
+
+    expect(seen, isNotNull);
+    expect(seen!.headers.containsKey('authorization'), isFalse,
+        reason: 'no key means no Authorization header, not an empty bearer');
   });
 
   test('a base URL without a version path still resolves', () {

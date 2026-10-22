@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:natter/data/chat_completions_client.dart';
+import 'package:natter/domain/assistant_draft.dart';
 import 'package:natter/domain/chat_message.dart';
 import 'package:natter/domain/endpoint_profile.dart';
 import 'package:natter/domain/stream_delta.dart';
@@ -147,6 +148,34 @@ void main() {
 
       final state = t.container.read(conversationProvider);
       expect(state.messages.map((m) => m.content).toList(), ['hi']);
+      expect(state.draft, isNull);
+      expect(state.error, isNull);
+    });
+
+    test('cancel during thinking commits nothing: half a chain of thought is '
+        'not an answer', () async {
+      // This is the case a live thinking model hits: reasoning lands, then the
+      // user cancels before any answer token. The blank-answer fallback belongs
+      // to a completed stream, not to a deliberate abort.
+      final t = createTestContainer();
+      final notifier = t.container.read(conversationProvider.notifier);
+      await t.container.read(profileProvider.notifier).save(testProfile);
+      notifier.send('hi');
+      await settle();
+      t.service.emit(0, const [
+        StreamDelta(reasoning: 'let me think'),
+        StreamDelta(reasoning: ' about it'),
+      ]);
+      await settle();
+      expect(t.container.read(conversationProvider).draft?.phase,
+          AssistantPhase.thinking);
+
+      notifier.cancel();
+      await settle();
+
+      final state = t.container.read(conversationProvider);
+      expect(state.messages.map((m) => m.content).toList(), ['hi'],
+          reason: 'no assistant turn may be committed from reasoning alone');
       expect(state.draft, isNull);
       expect(state.error, isNull);
     });

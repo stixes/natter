@@ -12,10 +12,11 @@ class EndpointProfile {
   final String apiKey;
   final String model;
 
+  /// A key is not required. A local llama.cpp or llama-swap server usually
+  /// needs none, and the client sends no `Authorization` header when the key is
+  /// empty, so URL plus model is a usable endpoint.
   bool get isConfigured =>
-      baseUrl.trim().isNotEmpty &&
-      apiKey.trim().isNotEmpty &&
-      model.trim().isNotEmpty;
+      baseUrl.trim().isNotEmpty && model.trim().isNotEmpty;
 
   EndpointProfile copyWith({String? baseUrl, String? apiKey, String? model}) {
     return EndpointProfile(

@@ -73,7 +73,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             autocorrect: false,
             decoration: InputDecoration(
               labelText: 'API key',
-              helperText: 'Stored in the Android keystore, never in history',
+              helperText: 'Optional: many local servers need none. Stored in '
+                  'the Android keystore, never in history',
               border: const OutlineInputBorder(),
               suffixIcon: IconButton(
                 icon: Icon(

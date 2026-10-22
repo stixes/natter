@@ -259,9 +259,37 @@ void main() {
     );
     expect(button.onPressed, isNull);
     expect(
-      find.text('No endpoint configured. Open Settings to set a base URL, '
-          'API key, and model.'),
+      find.text('No endpoint configured. Open Settings to set a base URL '
+          'and model.'),
       findsOneWidget,
     );
+  });
+
+  testWidgets('a base URL and model with no key is enough to send',
+      (tester) async {
+    // The proposal's own use case is a live llama.cpp server, which needs no
+    // key at all: demanding one would lock local endpoints out of the app.
+    final t = createTestContainer();
+    await t.container.read(profileProvider.notifier).save(const EndpointProfile(
+          baseUrl: 'http://192.0.2.10:8080/v1',
+          model: 'qwen3-14b',
+        ));
+    await tester.pumpWidget(_app(t.container));
+
+    final button = tester.widget<IconButton>(
+      find.ancestor(
+        of: find.byIcon(Icons.arrow_upward),
+        matching: find.byType(IconButton),
+      ),
+    );
+    expect(button.onPressed, isNotNull,
+        reason: 'Send must work for an endpoint that needs no key');
+    expect(find.textContaining('No endpoint configured'), findsNothing);
+
+    await _sendMessage(tester, 'hi');
+    expect(t.service.requests, hasLength(1),
+        reason: 'and the request must go out');
+    expect(t.service.requests.single.profile.apiKey, '',
+        reason: 'an empty key must stay empty rather than be invented');
   });
 }
