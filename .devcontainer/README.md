@@ -45,3 +45,8 @@ from the container's network:
 
 `host.docker.internal` resolves via host-gateway on both Docker and
 Podman (added through `runArgs`).
+
+Wireless debugging rotates the device's adb port when it sleeps, so a stale
+endpoint shows up as a missing entry or `device offline` in `adb devices`.
+Re-run `adb connect <device-ip>:<port>` with the port the phone is currently
+advertising.

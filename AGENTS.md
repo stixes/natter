@@ -13,7 +13,7 @@ We compete on subtraction. Every feature we refuse to build is the product.
 ## Product principles
 
 1. The chat screen is the product. Everything else is support.
-2. History is sacred: instant, searchable, exportable, local, never leaves the device without explicit user action.
+2. History is sacred: instant, searchable, exportable, local, never leaves the device without explicit user action. (Destination, not shipped: `openspec/specs/` says what exists today.)
 3. No accounts, no sign-in, no cloud sync (until a spec proposal argues otherwise).
 4. BYO endpoint only. We are never a proxy and never hold API keys server-side.
 
@@ -28,13 +28,14 @@ We compete on subtraction. Every feature we refuse to build is the product.
 
 ## Stack
 
-- Flutter (Dart), Material 3; Android is the primary target, iOS is a free rider, desktop is out of scope
-- Riverpod for state; no other framework unless a proposal justifies it
-- Drift (SQLite) for conversations/messages; shared_preferences for settings
-- API keys via flutter_secure_storage (keystore-backed); never in SQL, logs, or backups
-- `http` + json_serializable for OpenAI-compatible `chat/completions` with SSE streaming; no cloud SDK packages
-- Provider formats: OpenAI-compatible first; Anthropic-native only if a proposal adds it
-- Reasonable dependency budget: justify every pub package in code or in the proposal that adds it
+- Flutter (Dart), Material 3. Android only: there is no `ios/` scaffolding, and iOS would arrive with a proposal. Desktop is out of scope.
+- Riverpod for state; no other framework unless a proposal justifies it.
+- `pubspec.yaml` is the truth about what is installed, and it stays deliberately small: every pub package needs a reason in code or in the proposal that adds it.
+- `flutter_secure_storage` is pinned to `^9.2.2`, because v10 wants Android SDK 36 and the dev image pins 35. API keys reach only its keystore-backed store, never SQL, logs, or backups.
+- History is Drift (SQLite) territory and durable settings land on `shared_preferences`. Neither is a dependency yet; the proposal that adds one owes the reason.
+- Streaming is `http` against `chat/completions`, SSE parsed by hand: no codegen, no cloud SDK packages.
+- Provider formats: OpenAI-compatible first; Anthropic-native only if a proposal adds it.
+- Android's cleartext block does not constrain this app: dart:io opens its own sockets rather than going through OkHttp, so a plain `http://` endpoint needs no manifest or network-security config.
 
 ## Dev environment: devcontainer
 
@@ -55,21 +56,23 @@ The remote is public, so every commit is **publishable** material: hosts, addres
 
 ## Spec workflow (OpenSpec)
 
-Layout: `openspec/project.md` (context), `openspec/specs/` (truth), `openspec/changes/` (in-flight proposals).
+Layout: `openspec/specs/` (shipped truth), `openspec/changes/` (in-flight proposals), `openspec/config.yaml` (context and artifact rules handed to the OpenSpec CLI).
 
 Rules:
-1. Any user-visible behavior change starts as a proposal: `/opsx:propose <idea>` producing proposal + spec deltas + tasks.
+1. Any user-visible behavior change starts as a proposal: `/opsx-propose <idea>` producing proposal + spec deltas + tasks.
 2. No implementation before a proposal is approved (not silently added, no drive-by feature creep).
 3. Small proposals: one screen or subsystem each. Prefer several tiny changes over one big rewrite.
-4. Implement with `/opsx:apply` working the tasks checklist; commit per task where practical.
-5. Close with `/opsx:archive` so `specs/` reflects shipped truth. Specs are the source of truth; if code and spec disagree, that is a bug in one of them.
+4. Implement with `/opsx-apply` working the tasks checklist; commit per task where practical.
+5. Close with `/opsx-archive` so `specs/` reflects shipped truth. Specs are the source of truth; if code and spec disagree, that is a bug in one of them.
 6. A new dependency, a new permission, or a new network destination needs the proposal to say why in one sentence.
+7. `openspec validate <change> --strict` is green before a proposal counts as approved, and before it is archived.
 
 ## Definition of done
 
 - Spec delta updated, tests green, streaming edge cases handled (cancel, mid-stream error, retry, malformed SSE)
 - No new permissions, no new network calls beyond what the proposal states
 - Changelog entry (user-facing wording, not commit-speak)
+- A change that touches the network path owes on-device rounds against a live endpoint, recorded in `validation.md` beside the change. A round that gets descoped is named there as debt, and the change that owes it is named with it
 - Publishable scan clean on every commit (Publishing hygiene)
 
 ## Tone and polish bar

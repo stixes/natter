@@ -1,32 +1,25 @@
 schema: spec-driven
 
-# Project context (optional)
-# Add only constraints that should guide OpenSpec artifacts and workflows.
-# Include constraints an agent cannot infer by reading the code.
-# Keep general project documentation and discoverable codebase facts out.
-# Example:
-#   context: |
-#     Designs and tasks must cover Windows, macOS, and Linux
-#     Write all artifacts in Spanish
+# Constraints the OpenSpec CLI cannot infer from the code. AGENTS.md is the
+# single source of truth for product principles and non-goals, so this points
+# at them rather than restating them, and spends its tokens on what only
+# matters while an artifact is being written.
+context: |
+  Natter is a deliberately small BYO-endpoint Android chat client. Product
+  principles and the explicit non-goals live in AGENTS.md; a change that would
+  alter one must name it rather than drift into it.
+  Hosts, devices, addresses, and people in any artifact read as placeholders:
+  <llama-swap-host>, <dev-box>, <tls-front-host>, <device>, and example
+  addresses from 192.0.2.0/24. See AGENTS.md "Publishing hygiene".
 
-# Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always state what is out of scope
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
-
-# Per-operation guidance (optional)
-# Add advisory guidance for how apply and archive work should be conducted.
-# This is separate from artifact rules above.
-# Example:
-#   operations:
-#     apply:
-#       guidance:
-#         - Keep test summaries concise
-#     archive:
-#       guidance:
-#         - Summarize the archive outcome before finishing
+rules:
+  proposal:
+    - State what is out of scope, and name any non-goal it would touch
+    - One screen or subsystem per proposal; several tiny changes beat one rewrite
+    - A new dependency, permission, or network destination carries its reason
+      in one sentence
+  tasks:
+    - A task that touches the network path closes with an on-device round
+      against a live endpoint, recorded in validation.md under the change
+    - Every task states the check that closes it: a command, or a behaviour
+      observed on the device
