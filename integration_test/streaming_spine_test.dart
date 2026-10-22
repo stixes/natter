@@ -4,7 +4,9 @@
 // live endpoint over wireless adb takes minutes and a network dropout should
 // cost one round rather than the whole suite.
 //
-// Values come from --dart-define so no key ever reaches the repository:
+// Values come from --dart-define so no key ever reaches the repository. Hosts
+// below are placeholders; substitute your own (angle brackets are not shell-safe
+// as written):
 //
 //   flutter test integration_test -d <device> -n "7.1 plain" \
 //     --dart-define=NATTER_BASE_URL=http://<llama-swap-host>:8000/v1 \

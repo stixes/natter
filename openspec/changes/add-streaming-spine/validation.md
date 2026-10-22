@@ -22,7 +22,9 @@ Wi-Fi dropout costs one round rather than the suite. Each round starts from
 | 7.3 blank-answer fallback | pass | against `integration_test/support/mock_reasoning_endpoint.py` (reasoning only, no answer text): one commit of the reasoning as the answer, `growth=1` proving reasoning was never rendered as answer text while streaming |
 | 7.3 error + retry | pass | unreachable endpoint surfaced `Cannot reach the endpoint: No route to host` with Retry; Retry streamed a reply and cleared the banner |
 
-Command shape (one round at a time; `--plain-name` selects it):
+Command shape (one round at a time; `--plain-name` selects it). Host and device
+names are placeholders - substitute your own, and note that angle brackets are
+not shell-safe as written:
 
 ```
 adb -s <device> shell pm clear dev.natter.app

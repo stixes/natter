@@ -13,6 +13,8 @@ Then point the harness at it:
 
     --dart-define=NATTER_MOCK_URL=http://<dev-box>:8010/v1
 
+Substitute your own host for the placeholder; angle brackets are not shell-safe.
+
 Task-scoped test support for add-streaming-spine; it goes away with the change.
 """
 
