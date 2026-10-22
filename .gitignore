@@ -43,3 +43,9 @@ android/.gradle/
 android/app/debug
 android/app/profile
 android/app/release
+
+# Machine-specific and generated Android files
+android/local.properties
+android/.cxx/
+android/app/.cxx/
+android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
