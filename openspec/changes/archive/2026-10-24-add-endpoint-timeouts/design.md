@@ -79,12 +79,44 @@ machinery than the behaviour under test deserves).
 the controller can decide to commit the partial. Alternative: a separate failure type
 (rejected: the controller and UI already branch on one type, and the UI copy is data).
 
+## Measured cold load and keepalive behaviour
+
+Task 1.1 measured a cold load against the live llama-swap: the served model was unloaded,
+then a streaming request was made. Timings:
+
+- Response headers arrived at **12.28 s** (`time_starttransfer` = 12.283974 s).
+- The first SSE `data:` line arrived at **12.50 s** (12.502 s measured by the client).
+- Total request time was **12.57 s**.
+
+The measured cold load is therefore about 12.3 s, roughly one tenth of the 120 s
+response-start bound proposed below. That bound remains deliberately generous for slower
+models and slower disks.
+
+Task 1.2 captured the raw SSE stream with `curl -N`. No SSE comment/keepalive lines (`:`
+lines) arrived while the model was loading or generating; the first bytes after the
+headers were a `data:` chunk. A trimmed sample:
+
+```text
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"role":"assistant","content":null}}],"created":...,"id":"...","model":"<model>","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"content":"Hello"}}],"created":...,"id":"...","model":"<model>","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":"stop","index":0,"delta":{}}],"created":...,"id":"...","model":"<model>","object":"chat.completion.chunk","timings":{...}}
+
+data: [DONE]
+```
+
+Because this endpoint sends no keepalives during a cold load or generation, the silence
+bound must be sized for whole-generation gaps, not for gaps between keepalive comments.
+The 60 s silence bound below is therefore a conservative ceiling, not a heartbeat-derived
+value.
+
 ## Risks / Trade-offs
 
 - A local model that takes longer than 120s to load fails with "the endpoint did not
-  respond", which reads like a dead endpoint. Mitigation: measure a cold load on the live
-  llama-swap during implementation and set the constant from the measurement, not from
-  this document; the message tells the user to check the server.
+  respond", which reads like a dead endpoint. Measured cold load on the live llama-swap
+  was 12.28 s to headers and 12.50 s to the first data line (task 1.1), so the 120 s bound
+  leaves roughly 10x margin; the message tells the user to check the server.
 - A gateway that buffers and sends no keepalives could be killed at 60s of silence.
   Mitigation: 60s is far beyond token gaps; the on-device stalled-stream round exercises
   it, and Retry is one tap.

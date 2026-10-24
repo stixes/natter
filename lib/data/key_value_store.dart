@@ -1,4 +1,5 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// A tiny key/value seam so tests can inspect *where* a value landed.
 ///
@@ -15,8 +16,9 @@ abstract interface class KeyValueStore {
   Future<Map<String, String>> contents();
 }
 
-/// Plain settings location. Not persisted across restarts in this change -
-/// the profiles change decides the durable settings home.
+/// Plain settings location for tests. Production uses
+/// [SharedPreferencesKeyValueStore]; this in-memory variant keeps widget and
+/// unit tests off the plugin channel.
 class InMemoryKeyValueStore implements KeyValueStore {
   final Map<String, String> _values = {};
 
@@ -35,6 +37,41 @@ class InMemoryKeyValueStore implements KeyValueStore {
 
   @override
   Future<Map<String, String>> contents() async => Map.of(_values);
+}
+
+/// Durable plain settings location. Survives process death and device
+/// restarts; holds base URL and model, never the API key.
+class SharedPreferencesKeyValueStore implements KeyValueStore {
+  SharedPreferencesKeyValueStore({required SharedPreferences preferences})
+    : _preferences = preferences;
+
+  final SharedPreferences _preferences;
+
+  @override
+  Future<String?> read(String key) async => _preferences.getString(key);
+
+  @override
+  Future<void> write(String key, String value) async {
+    final saved = await _preferences.setString(key, value);
+    if (!saved) {
+      throw StateError('Could not persist settings key "$key".');
+    }
+  }
+
+  @override
+  Future<void> delete(String key) async {
+    await _preferences.remove(key);
+  }
+
+  @override
+  Future<Map<String, String>> contents() async {
+    final values = <String, String>{};
+    for (final key in _preferences.getKeys()) {
+      final value = _preferences.getString(key);
+      if (value != null) values[key] = value;
+    }
+    return values;
+  }
 }
 
 /// Keystore-backed location for the API key.

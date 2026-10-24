@@ -39,10 +39,12 @@ We compete on subtraction. Every feature we refuse to build is the product.
 
 ## Dev environment: devcontainer
 
-- Host needs only a container engine (Docker if available, else Podman) + a physical Android device (USB or network ADB)
+- Host needs only a container engine (Docker if available, else Podman); a physical Android device is not required
 - `.devcontainer/` image: Flutter SDK, JDK 21, Android SDK + platform-tools; Gradle and pub caches in named volumes
-- No emulator inside the container (GPU/accel pain); debug on-device via adb forwarded from the host
-- `flutter analyze && flutter test` must pass inside the container on any commit; integration tests via `integration_test` on a connected device
+- The default debug and integration target is the always-on Android emulator on `<dev-box>`, reached over the tailnet through its remote adb server (`ADB_SERVER_SOCKET=tcp:<dev-box>:5037`, device id `emulator-5554`); no emulator runs inside the container
+- A physical device is an optional fallback when the emulator host is unavailable; `.devcontainer/README.md` covers host-forwarded adb for that case
+- Emulator host, address, and key details live in the git-ignored local notes, never in a commit
+- `flutter analyze && flutter test` must pass inside the container on any commit; integration tests via `integration_test` run on the emulator
 
 ## Publishing hygiene
 

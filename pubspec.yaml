@@ -34,6 +34,16 @@ dependencies:
   flutter_riverpod: ^3.3.2
   http: ^1.6.0
   flutter_secure_storage: ^9.2.2
+  # Exact pin: 2.5.4+ needs Dart 3.9/Flutter 3.35; the dev image is
+  # Flutter 3.29.3 / Dart 3.7.2.
+  shared_preferences: 2.5.3
+  # Exact pins: the dev image's Flutter 3.29.3 integration_test pins
+  # test_api 0.7.4, so the resolver is stuck on analyzer <8.0.0. Drift 2.30+
+  # needs analyzer >=8.1.0 and cannot resolve; 2.29.0 stays on analyzer 7.x
+  # and sqlite3 ^2.6.0. drift_flutter 0.2.7 is the last release that allows
+  # drift 2.29.0 (0.2.8 requires ^2.30.0).
+  drift: 2.29.0
+  drift_flutter: 0.2.7
 
 dev_dependencies:
   flutter_test:
@@ -49,6 +59,13 @@ dev_dependencies:
     sdk: flutter
   flutter_driver:
     sdk: flutter
+  # Drift's table code generation. The generated .g.dart is committed, so
+  # these run only when the schema changes (see design.md). build_runner 2.7.1
+  # is the last release whose transitive source_gen still supports the dev
+  # image's Dart 3.7.2 (2.8.0+ pulls build ^4.0.0 and source_gen ^4.2.1, which
+  # needs Dart 3.9.0).
+  drift_dev: 2.29.0
+  build_runner: 2.7.1
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

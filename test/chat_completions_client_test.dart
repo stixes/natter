@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -296,6 +297,174 @@ data: [DONE]
       isFalse,
       reason: 'delta and profile logging must not include the key',
     );
+  });
+
+  test('a refused connection fails well under the connection budget', () async {
+    final reserved = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+    final port = reserved.port;
+    await reserved.close();
+    final client = ChatCompletionsClient(
+      connectionTimeout: const Duration(seconds: 1),
+    );
+    addTearDown(client.close);
+    final stopwatch = Stopwatch()..start();
+    await expectLater(
+      client
+          .stream(
+            profile: EndpointProfile(
+              baseUrl: 'http://127.0.0.1:$port/v1',
+              model: 'm',
+            ),
+            messages: messages,
+          )
+          .toList(),
+      throwsA(isA<ChatRequestFailure>()),
+    );
+    stopwatch.stop();
+    expect(stopwatch.elapsed, lessThan(const Duration(seconds: 1)));
+  });
+
+  test('a server that accepts but never responds hits the response-start '
+      'bound', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => server.close(force: true));
+    server.listen((request) {
+      // Deliberately never complete the response: the client must give up.
+    });
+    final client = ChatCompletionsClient(
+      responseStartTimeout: const Duration(milliseconds: 100),
+    );
+    addTearDown(client.close);
+    await expectLater(
+      client
+          .stream(
+            profile: EndpointProfile(
+              baseUrl: 'http://127.0.0.1:${server.port}/v1',
+              model: 'm',
+            ),
+            messages: messages,
+          )
+          .toList(),
+      throwsA(
+        isA<ChatRequestFailure>().having(
+          (f) => f.message,
+          'message',
+          'The endpoint did not respond.',
+        ),
+      ),
+    );
+  });
+
+  test('a hung HTTP error body hits the response-start bound', () async {
+    final controller = StreamController<List<int>>();
+    addTearDown(controller.close);
+    final client = ChatCompletionsClient(
+      httpClient: MockClient.streaming((request, bodyStream) async {
+        return http.StreamedResponse(controller.stream, 503);
+      }),
+      responseStartTimeout: const Duration(milliseconds: 100),
+    );
+    await expectLater(
+      client.stream(profile: testProfile, messages: messages).toList(),
+      throwsA(
+        isA<ChatRequestFailure>().having(
+          (f) => f.message,
+          'message',
+          'The endpoint did not respond.',
+        ),
+      ),
+    );
+  });
+
+  test('a stalled stream hits the silence bound after some data', () async {
+    final controller = StreamController<List<int>>();
+    addTearDown(controller.close);
+    final client = ChatCompletionsClient(
+      httpClient: MockClient.streaming((request, bodyStream) async {
+        return http.StreamedResponse(controller.stream, 200);
+      }),
+      silenceTimeout: const Duration(milliseconds: 100),
+    );
+    final received = <String>[];
+    final future = client
+        .stream(profile: testProfile, messages: messages)
+        .listen((delta) => received.add(delta.content))
+        .asFuture<void>();
+    controller.add(utf8.encode(
+      'data: {"choices":[{"index":0,"delta":{"content":"partial"}}]}\n\n',
+    ));
+    await pumpEventQueue();
+    expect(received.join(), 'partial');
+    await expectLater(
+      future,
+      throwsA(
+        isA<ChatRequestFailure>()
+            .having(
+              (f) => f.message,
+              'message',
+              'The reply stopped arriving.',
+            )
+            .having((f) => f.isSilenceFailure, 'isSilenceFailure', isTrue),
+      ),
+    );
+  });
+
+  test('a keepalive line resets the silence bound', () async {
+    final controller = StreamController<List<int>>();
+    final keepalive = Timer.periodic(const Duration(milliseconds: 40), (_) {
+      if (!controller.isClosed) {
+        controller.add(utf8.encode(': keepalive\n\n'));
+      }
+    });
+    final finish = Timer(const Duration(milliseconds: 200), () {
+      keepalive.cancel();
+      controller.add(utf8.encode(
+        'data: {"choices":[{"index":0,"delta":{"content":"done"}}]}\n\n',
+      ));
+      controller.add(utf8.encode('data: [DONE]\n\n'));
+      controller.close();
+    });
+    addTearDown(() {
+      keepalive.cancel();
+      finish.cancel();
+      controller.close();
+    });
+    final client = ChatCompletionsClient(
+      httpClient: MockClient.streaming((request, bodyStream) async {
+        return http.StreamedResponse(controller.stream, 200);
+      }),
+      silenceTimeout: const Duration(milliseconds: 100),
+    );
+    final received = <String>[];
+    await client
+        .stream(profile: testProfile, messages: messages)
+        .forEach((delta) => received.add(delta.content));
+    expect(received, ['done']);
+  });
+
+  test('budgets default to the documented constants and are injectable', () {
+    expect(
+      ChatCompletionsClient.defaultConnectionTimeout,
+      const Duration(seconds: 15),
+    );
+    expect(
+      ChatCompletionsClient.defaultResponseStartTimeout,
+      const Duration(seconds: 120),
+    );
+    expect(
+      ChatCompletionsClient.defaultSilenceTimeout,
+      const Duration(seconds: 60),
+    );
+
+    final client = ChatCompletionsClient(
+      connectionTimeout: const Duration(seconds: 1),
+      responseStartTimeout: const Duration(seconds: 2),
+      silenceTimeout: const Duration(seconds: 3),
+    );
+    addTearDown(client.close);
+    expect(client.connectionTimeout, const Duration(seconds: 1));
+    expect(client.responseStartTimeout, const Duration(seconds: 2));
+    expect(client.silenceTimeout, const Duration(seconds: 3));
   });
 }
 

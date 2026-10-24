@@ -1,10 +1,14 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- The only network destination is the user-configured endpoint. -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- History is the most sensitive thing Natter stores and the app has no
+         cloud story. Disable Android Auto Backup for the whole app so neither
+         the database nor settings leave the device through the OS service. -->
     <application
         android:label="natter"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:allowBackup="false">
         <activity
             android:name=".MainActivity"
             android:exported="true"

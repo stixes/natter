@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 
 import '../domain/chat_message.dart';
 import '../domain/endpoint_profile.dart';
@@ -10,10 +12,18 @@ import '../domain/stream_delta.dart';
 /// A failure surfaced to the chat screen. Its [message] is user-facing and is
 /// built so that it can never carry the API key.
 class ChatRequestFailure implements Exception {
-  const ChatRequestFailure(this.message, {this.statusCode});
+  const ChatRequestFailure(
+    this.message, {
+    this.statusCode,
+    this.isSilenceFailure = false,
+  });
 
   final String message;
   final int? statusCode;
+
+  /// True when the failure came from the silence bound on an open stream, so
+  /// the controller can keep answer text that already reached the screen.
+  final bool isSilenceFailure;
 
   @override
   String toString() => message;
@@ -43,10 +53,40 @@ String? sseData(String line) {
 /// No SDK: the dialect differences (reasoning field naming, keepalives,
 /// malformed chunks) must stay visible and handled here explicitly.
 class ChatCompletionsClient implements ChatStreamService {
-  ChatCompletionsClient({http.Client? httpClient})
-    : _http = httpClient ?? http.Client();
+  ChatCompletionsClient({
+    http.Client? httpClient,
+    this.connectionTimeout = defaultConnectionTimeout,
+    this.responseStartTimeout = defaultResponseStartTimeout,
+    this.silenceTimeout = defaultSilenceTimeout,
+  }) : _http = httpClient ?? _createClient(connectionTimeout);
+
+  /// Bounds DNS + TCP + TLS for a request. A mistyped or black-holed host
+  /// never reaches the response phase, so this is what makes the socket
+  /// layer deterministic.
+  static const Duration defaultConnectionTimeout = Duration(seconds: 15);
+
+  /// Bounds the wait for response headers. Generous enough for a cold local
+  /// model load (measured at ~12.3 s on the dev llama-swap), and still finite.
+  static const Duration defaultResponseStartTimeout = Duration(seconds: 120);
+
+  /// Bounds silence once the stream is open. Any line resets it, including
+  /// SSE comments and keepalives.
+  static const Duration defaultSilenceTimeout = Duration(seconds: 60);
 
   final http.Client _http;
+
+  /// Socket-phase budget; only used when this client creates its own client.
+  final Duration connectionTimeout;
+
+  /// Budget for response headers and for the HTTP >= 400 error body.
+  final Duration responseStartTimeout;
+
+  /// Per-event budget once the SSE stream is open.
+  final Duration silenceTimeout;
+
+  /// Closes the underlying HTTP client. The provider owns one long-lived
+  /// instance per app and closes it on dispose.
+  void close() => _http.close();
 
   /// Accepts a base URL with or without a trailing slash and with or without
   /// a trailing `/v1` (or a full `/chat/completions` URL).
@@ -57,6 +97,11 @@ class ChatCompletionsClient implements ChatStreamService {
     }
     if (base.endsWith('/chat/completions')) return Uri.parse(base);
     return Uri.parse('$base/chat/completions');
+  }
+
+  static http.Client _createClient(Duration connectionTimeout) {
+    final httpClient = HttpClient()..connectionTimeout = connectionTimeout;
+    return IOClient(httpClient);
   }
 
   @override
@@ -81,13 +126,26 @@ class ChatCompletionsClient implements ChatStreamService {
 
     http.StreamedResponse response;
     try {
-      response = await _http.send(request);
+      response = await _http.send(request).timeout(responseStartTimeout);
+    } on TimeoutException {
+      throw const ChatRequestFailure('The endpoint did not respond.');
     } on http.ClientException catch (error) {
+      final message = error.message.toLowerCase();
+      if (message.contains('timed out') || message.contains('timeout')) {
+        throw const ChatRequestFailure('The endpoint did not respond.');
+      }
       throw ChatRequestFailure('Cannot reach the endpoint: ${error.message}');
     }
 
     if (response.statusCode >= 400) {
-      final body = await response.stream.bytesToString();
+      String body;
+      try {
+        body = await response.stream
+            .bytesToString()
+            .timeout(responseStartTimeout);
+      } on TimeoutException {
+        throw const ChatRequestFailure('The endpoint did not respond.');
+      }
       throw ChatRequestFailure(
         'Endpoint returned HTTP ${response.statusCode}: ${_excerpt(body)}',
         statusCode: response.statusCode,
@@ -96,7 +154,8 @@ class ChatCompletionsClient implements ChatStreamService {
 
     final lines = response.stream
         .transform(utf8.decoder)
-        .transform(const LineSplitter());
+        .transform(const LineSplitter())
+        .timeout(silenceTimeout);
 
     try {
       await for (final line in lines) {
@@ -107,6 +166,11 @@ class ChatCompletionsClient implements ChatStreamService {
         if (delta == null) continue;
         yield delta;
       }
+    } on TimeoutException {
+      throw const ChatRequestFailure(
+        'The reply stopped arriving.',
+        isSilenceFailure: true,
+      );
     } on http.ClientException catch (error) {
       throw ChatRequestFailure('The stream failed: ${error.message}');
     } on FormatException {

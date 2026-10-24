@@ -6,7 +6,7 @@ Package/app id: `dev.natter.app`. Android is the primary target.
 
 ## Dev environment
 
-All development happens inside the devcontainer (`.devcontainer/`): Flutter SDK, JDK 21, and the Android SDK, with Gradle and pub caches in named volumes. The host needs only a container engine (Docker, or Podman with `podman machine` running on macOS) and a physical Android device. There is no emulator in the container.
+All development happens inside the devcontainer (`.devcontainer/`): Flutter SDK, JDK 21, and the Android SDK, with Gradle and pub caches in named volumes. The host needs only a container engine (Docker, or Podman with `podman machine` running on macOS). The default test target is an always-on Android emulator on `<dev-box>`, reached over the tailnet through its remote adb server; a physical device is an optional fallback. There is no emulator in the container.
 
 ## Verify
 
@@ -19,12 +19,14 @@ flutter test
 
 Both must pass on any commit.
 
-## Run on a device
+## Run on the emulator
 
-Start an adb server on the host, then from the container:
+Point the container at the emulator's remote adb server, then run:
 
 ```
+export ADB_SERVER_SOCKET=tcp:<dev-box>:5037
+adb devices
 flutter run --debug
 ```
 
-On macOS + Podman, `ADB_SERVER_SOCKET=tcp:host.containers.internal:5037` is exported automatically inside the container.
+For a physical-device fallback, start an adb server on the host instead. On macOS + Podman, `ADB_SERVER_SOCKET=tcp:host.containers.internal:5037` is exported automatically inside the container. Set only one `ADB_SERVER_SOCKET` at a time.

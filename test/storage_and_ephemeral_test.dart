@@ -4,6 +4,7 @@ import 'package:natter/data/profile_repository.dart';
 import 'package:natter/domain/endpoint_profile.dart';
 import 'package:natter/domain/stream_delta.dart';
 import 'package:natter/state/chat_providers.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/test_support.dart';
 
@@ -76,6 +77,33 @@ void main() {
       final profile = await repo.load();
       expect(profile, const EndpointProfile());
       expect(profile.isConfigured, isFalse);
+    });
+  });
+
+  group('durable preferences-backed store', () {
+    setUp(() {
+      SharedPreferences.setMockInitialValues({});
+    });
+
+    test('read, write, delete, and contents all work', () async {
+      final preferences = await SharedPreferences.getInstance();
+      final store = SharedPreferencesKeyValueStore(
+        preferences: preferences,
+      );
+
+      expect(await store.read('missing'), isNull);
+
+      await store.write('endpoint.baseUrl', 'http://127.0.0.1:8080/v1');
+      await store.write('endpoint.model', 'qwen3-test');
+      expect(await store.read('endpoint.baseUrl'), 'http://127.0.0.1:8080/v1');
+      expect(await store.contents(), {
+        'endpoint.baseUrl': 'http://127.0.0.1:8080/v1',
+        'endpoint.model': 'qwen3-test',
+      });
+
+      await store.delete('endpoint.baseUrl');
+      expect(await store.read('endpoint.baseUrl'), isNull);
+      expect(await store.contents(), {'endpoint.model': 'qwen3-test'});
     });
   });
 

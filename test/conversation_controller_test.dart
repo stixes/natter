@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:natter/data/chat_completions_client.dart';
 import 'package:natter/domain/assistant_draft.dart';
 import 'package:natter/domain/chat_message.dart';
+import 'package:natter/domain/conversation_summary.dart';
 import 'package:natter/domain/endpoint_profile.dart';
 import 'package:natter/domain/stream_delta.dart';
 import 'package:natter/state/chat_providers.dart';
@@ -336,6 +337,94 @@ void main() {
         ],
       );
     });
+    test('a silence failure keeps the partial answer and stays sendable',
+        () async {
+      final t = createTestContainer();
+      final notifier = t.container.read(conversationProvider.notifier);
+      await t.container.read(profileProvider.notifier).save(testProfile);
+
+      notifier.send('hi');
+      await settle();
+      t.service.emit(0, const [StreamDelta(content: 'partial answer')]);
+      await settle();
+      t.service.fail(
+        0,
+        const ChatRequestFailure(
+          'The reply stopped arriving.',
+          isSilenceFailure: true,
+        ),
+      );
+      await settle();
+
+      final state = t.container.read(conversationProvider);
+      expect(state.error, 'The reply stopped arriving.');
+      expect(state.draft, isNull);
+      expect(
+        state.messages.map((m) => m.content).toList(),
+        ['hi', 'partial answer'],
+      );
+      final committed = state.messages.last;
+      expect(committed.role, ChatRole.assistant);
+      expect(committed.content, 'partial answer');
+
+      // The conversation is still well-formed and sendable.
+      notifier.send('next');
+      await settle();
+      expect(t.service.requests, hasLength(2));
+      expect(
+        t.service.requests.last.messages.map((m) => m.content).toList(),
+        ['hi', 'partial answer', 'next'],
+      );
+    });
+
+    test('a non-silence failure still drops the partial', () async {
+      final t = createTestContainer();
+      final notifier = t.container.read(conversationProvider.notifier);
+      await t.container.read(profileProvider.notifier).save(testProfile);
+
+      notifier.send('hi');
+      await settle();
+      t.service.emit(0, const [StreamDelta(content: 'partial answer')]);
+      await settle();
+      t.service.fail(0, const ChatRequestFailure('boom'));
+      await settle();
+
+      final state = t.container.read(conversationProvider);
+      expect(state.error, 'boom');
+      expect(state.draft, isNull);
+      expect(
+        state.messages.map((m) => m.content).toList(),
+        ['hi'],
+        reason: 'a non-silence failure must not commit the partial',
+      );
+    });
+
+    test('a silence failure with only reasoning commits no answer', () async {
+      final t = createTestContainer();
+      final notifier = t.container.read(conversationProvider.notifier);
+      await t.container.read(profileProvider.notifier).save(testProfile);
+
+      notifier.send('hi');
+      await settle();
+      t.service.emit(0, const [StreamDelta(reasoning: 'thinking only')]);
+      await settle();
+      t.service.fail(
+        0,
+        const ChatRequestFailure(
+          'The reply stopped arriving.',
+          isSilenceFailure: true,
+        ),
+      );
+      await settle();
+
+      final state = t.container.read(conversationProvider);
+      expect(state.error, 'The reply stopped arriving.');
+      expect(
+        state.messages.map((m) => m.content).toList(),
+        ['hi'],
+        reason: 'reasoning alone is not an answer, as with cancel',
+      );
+    });
   });
 
   group('profile state', () {
@@ -362,6 +451,459 @@ void main() {
       expect(profile.apiKey, 'key-material');
       expect(profile.model, 'm');
       expect(profile.isConfigured, isTrue);
+    });
+  });
+
+  group('history restore', () {
+    test('restores the most recent saved conversation', () async {
+      final summary = ConversationSummary(
+        id: 'saved',
+        title: 'Saved conversation',
+        updatedAt: DateTime(2024, 1, 1),
+      );
+      final repository = FakeConversationRepository(
+        conversations: [summary],
+        messages: const [
+          ChatMessage(role: ChatRole.user, content: 'hello'),
+          ChatMessage(role: ChatRole.assistant, content: 'hi'),
+        ],
+      );
+      final t = createTestContainer(repository: repository);
+      final notifier = t.container.read(conversationProvider.notifier);
+
+      await notifier.restoreMostRecent();
+
+      final state = t.container.read(conversationProvider);
+      expect(state.conversationId, 'saved');
+      expect(state.messages.map((m) => m.content).toList(), ['hello', 'hi']);
+      expect(state.historyNotice, isNull);
+      expect(state.draft, isNull);
+      expect(state.error, isNull);
+    });
+
+    test('a load failure starts empty with a history notice', () async {
+      final repository = FakeConversationRepository()
+        ..loadError = StateError('history unavailable');
+      final t = createTestContainer(repository: repository);
+      final notifier = t.container.read(conversationProvider.notifier);
+
+      await notifier.restoreMostRecent();
+
+      final state = t.container.read(conversationProvider);
+      expect(state.messages, isEmpty);
+      expect(state.conversationId, isNull);
+      expect(state.historyNotice, isNotNull);
+      expect(state.error, isNull);
+    });
+  });
+
+  group('history persistence', () {
+    test('saves the user turn before the request starts', () async {
+      final t = createTestContainer();
+      await t.container.read(profileProvider.notifier).save(testProfile);
+      final notifier = t.container.read(conversationProvider.notifier);
+
+      notifier.send('hello history');
+      await settle();
+
+      final state = t.container.read(conversationProvider);
+      expect(state.conversationId, isNotNull);
+      expect(t.repository.savedTurns, hasLength(1));
+      final saved = t.repository.savedTurns.single;
+      expect(saved.conversationId, state.conversationId);
+      expect(saved.message.role, ChatRole.user);
+      expect(saved.message.content, 'hello history');
+      expect(saved.title, 'hello history');
+      expect(t.service.requests, hasLength(1),
+          reason: 'the request starts after the save');
+      expect(
+        t.service.requests.single.messages.map((m) => m.content).toList(),
+        ['hello history'],
+      );
+    });
+
+    test('a failed save warns and still streams a reply', () async {
+      final t = createTestContainer();
+      await t.container.read(profileProvider.notifier).save(testProfile);
+      t.repository.saveError = StateError('disk full');
+      final notifier = t.container.read(conversationProvider.notifier);
+
+      notifier.send('hello');
+      await settle();
+
+      var state = t.container.read(conversationProvider);
+      expect(state.historyNotice, contains('not saved'));
+      expect(t.service.requests, hasLength(1),
+          reason: 'the request still starts');
+      expect(state.messages.map((m) => m.content).toList(), ['hello']);
+
+      t.service.emit(0, const [StreamDelta(content: 'reply')]);
+      t.service.end(0);
+      await settle();
+
+      state = t.container.read(conversationProvider);
+      expect(state.messages.map((m) => m.content).toList(), ['hello', 'reply']);
+      expect(state.historyNotice, contains('not saved'),
+          reason: 'the warning stays until dismissed');
+      expect(state.error, isNull);
+    });
+
+    test('an in-flight draft never reaches the repository', () async {
+      final t = createTestContainer();
+      await t.container.read(profileProvider.notifier).save(testProfile);
+      final notifier = t.container.read(conversationProvider.notifier);
+
+      notifier.send('hi');
+      await settle();
+      t.service.emit(0, const [StreamDelta(content: 'partial answer')]);
+      await settle();
+
+      expect(
+        t.repository.savedTurns.where(
+          (turn) => turn.message.role == ChatRole.assistant,
+        ),
+        isEmpty,
+        reason: 'the streaming draft must not be written',
+      );
+      expect(t.container.read(conversationProvider).draft, isNotNull);
+
+      t.service.end(0);
+      await settle();
+    });
+  });
+
+  group('assistant persistence', () {
+    test('saves the assistant turn on normal end', () async {
+      final t = createTestContainer();
+      await t.container.read(profileProvider.notifier).save(testProfile);
+      final notifier = t.container.read(conversationProvider.notifier);
+
+      notifier.send('hi');
+      await settle();
+      t.service.emit(0, const [StreamDelta(content: 'reply')]);
+      t.service.end(0);
+      await settle();
+
+      expect(
+        t.repository.savedTurns.map((turn) => turn.message.role).toList(),
+        [ChatRole.user, ChatRole.assistant],
+      );
+      expect(t.repository.savedTurns.last.message.content, 'reply');
+      final state = t.container.read(conversationProvider);
+      expect(state.messages.map((m) => m.content).toList(), ['hi', 'reply']);
+      expect(state.historyNotice, isNull);
+    });
+
+    test('saves the assistant turn on cancel with answer text', () async {
+      final t = createTestContainer();
+      await t.container.read(profileProvider.notifier).save(testProfile);
+      final notifier = t.container.read(conversationProvider.notifier);
+
+      notifier.send('hi');
+      await settle();
+      t.service.emit(0, const [StreamDelta(content: 'partial')]);
+      await settle();
+      notifier.cancel();
+      await settle();
+
+      expect(
+        t.repository.savedTurns.map((turn) => turn.message.role).toList(),
+        [ChatRole.user, ChatRole.assistant],
+      );
+      expect(t.repository.savedTurns.last.message.content, 'partial');
+    });
+
+    test('saves nothing when cancel arrives before any answer text',
+        () async {
+      final t = createTestContainer();
+      await t.container.read(profileProvider.notifier).save(testProfile);
+      final notifier = t.container.read(conversationProvider.notifier);
+
+      notifier.send('hi');
+      await settle();
+      notifier.cancel();
+      await settle();
+
+      expect(
+        t.repository.savedTurns.map((turn) => turn.message.role).toList(),
+        [ChatRole.user],
+        reason: 'cancel without answer text commits no assistant turn',
+      );
+    });
+
+    test('saves the partial answer when a silence failure commits it',
+        () async {
+      final t = createTestContainer();
+      await t.container.read(profileProvider.notifier).save(testProfile);
+      final notifier = t.container.read(conversationProvider.notifier);
+
+      notifier.send('hi');
+      await settle();
+      t.service.emit(0, const [StreamDelta(content: 'partial')]);
+      await settle();
+      t.service.fail(
+        0,
+        const ChatRequestFailure(
+          'The reply stopped arriving.',
+          isSilenceFailure: true,
+        ),
+      );
+      await settle();
+
+      expect(
+        t.repository.savedTurns.map((turn) => turn.message.role).toList(),
+        [ChatRole.user, ChatRole.assistant],
+      );
+      expect(t.repository.savedTurns.last.message.content, 'partial');
+      final state = t.container.read(conversationProvider);
+      expect(state.messages.map((m) => m.content).toList(), ['hi', 'partial']);
+      expect(state.error, 'The reply stopped arriving.');
+    });
+
+    test('a failed assistant save keeps the reply visible', () async {
+      final t = createTestContainer();
+      await t.container.read(profileProvider.notifier).save(testProfile);
+      final notifier = t.container.read(conversationProvider.notifier);
+
+      notifier.send('hi');
+      await settle();
+      // The user turn saved; only the assistant save fails.
+      t.repository.saveError = StateError('disk full');
+      t.service.emit(0, const [StreamDelta(content: 'reply')]);
+      t.service.end(0);
+      await settle();
+
+      final state = t.container.read(conversationProvider);
+      expect(state.messages.map((m) => m.content).toList(), ['hi', 'reply']);
+      expect(state.historyNotice, contains('not saved'));
+      expect(state.error, isNull);
+    });
+  });
+
+  group('titles and new chat', () {
+    test('sets the title once from the first user message', () async {
+      final t = createTestContainer();
+      await t.container.read(profileProvider.notifier).save(testProfile);
+      final notifier = t.container.read(conversationProvider.notifier);
+
+      notifier.send('first message');
+      await settle();
+      t.service.emit(0, const [StreamDelta(content: 'reply')]);
+      t.service.end(0);
+      await settle();
+
+      notifier.send('second message');
+      await settle();
+      t.service.emit(1, const [StreamDelta(content: 'reply two')]);
+      t.service.end(1);
+      await settle();
+
+      final summary = await t.repository.loadMostRecent();
+      expect(summary?.title, 'first message',
+          reason: 'later messages must not change the title');
+    });
+
+    test('shortens a long title for the list', () async {
+      final t = createTestContainer();
+      await t.container.read(profileProvider.notifier).save(testProfile);
+      final notifier = t.container.read(conversationProvider.notifier);
+
+      notifier.send('a' * 60);
+      await settle();
+
+      final summary = await t.repository.loadMostRecent();
+      expect(summary?.title, '${'a' * 48}…');
+      expect(summary?.title.length, 49);
+    });
+
+    test('makes no title request to the stream service', () async {
+      final t = createTestContainer();
+      await t.container.read(profileProvider.notifier).save(testProfile);
+      final notifier = t.container.read(conversationProvider.notifier);
+
+      notifier.send('hello');
+      await settle();
+
+      expect(t.service.requests, hasLength(1),
+          reason: 'the title is derived locally');
+    });
+
+    test('New chat clears the screen without inserting a row', () async {
+      final t = createTestContainer();
+      await t.container.read(profileProvider.notifier).save(testProfile);
+      final notifier = t.container.read(conversationProvider.notifier);
+
+      notifier.send('first');
+      await settle();
+      t.service.emit(0, const [StreamDelta(content: 'reply')]);
+      t.service.end(0);
+      await settle();
+      final savedBefore = t.repository.savedTurns.length;
+
+      notifier.startNewChat();
+      await settle();
+
+      final state = t.container.read(conversationProvider);
+      expect(state.messages, isEmpty);
+      expect(state.conversationId, isNull);
+      expect(state.draft, isNull);
+      expect(t.repository.savedTurns, hasLength(savedBefore),
+          reason: 'New chat inserts no row');
+    });
+
+    test('New chat stops an in-flight reply and keeps its answer text',
+        () async {
+      final t = createTestContainer();
+      await t.container.read(profileProvider.notifier).save(testProfile);
+      final notifier = t.container.read(conversationProvider.notifier);
+
+      notifier.send('first');
+      await settle();
+      t.service.emit(0, const [StreamDelta(content: 'partial')]);
+      await settle();
+
+      notifier.startNewChat();
+      await settle();
+
+      final state = t.container.read(conversationProvider);
+      expect(state.messages, isEmpty);
+      expect(state.conversationId, isNull);
+      expect(state.draft, isNull);
+      expect(t.repository.savedTurns.last.message.content, 'partial',
+          reason: 'the answer already received stays in the old conversation');
+    });
+  });
+
+  group('open conversation', () {
+    test('loads the target conversation messages', () async {
+      final target = ConversationSummary(
+        id: 'target',
+        title: 'Target',
+        updatedAt: DateTime(2024, 1, 1),
+      );
+      final repository = FakeConversationRepository(
+        conversations: [target],
+        messagesByConversation: {
+          'target': const [
+            ChatMessage(role: ChatRole.user, content: 'saved question'),
+            ChatMessage(role: ChatRole.assistant, content: 'saved answer'),
+          ],
+        },
+      );
+      final t = createTestContainer(repository: repository);
+      final notifier = t.container.read(conversationProvider.notifier);
+
+      await notifier.openConversation('target');
+
+      final state = t.container.read(conversationProvider);
+      expect(state.conversationId, 'target');
+      expect(
+        state.messages.map((m) => m.content).toList(),
+        ['saved question', 'saved answer'],
+      );
+      expect(state.historyNotice, isNull);
+      expect(state.draft, isNull);
+    });
+
+    test('switching mid-stream keeps the partial in the conversation left',
+        () async {
+      final repository = FakeConversationRepository(
+        conversations: [
+          ConversationSummary(
+            id: 'target',
+            title: 'Target',
+            updatedAt: DateTime(2024, 1, 1),
+          ),
+        ],
+        messagesByConversation: {
+          'target': const [
+            ChatMessage(role: ChatRole.user, content: 'saved question'),
+          ],
+        },
+      );
+      final t = createTestContainer(repository: repository);
+      await t.container.read(profileProvider.notifier).save(testProfile);
+      final notifier = t.container.read(conversationProvider.notifier);
+
+      notifier.send('outgoing');
+      await settle();
+      t.service.emit(0, const [StreamDelta(content: 'partial')]);
+      await settle();
+
+      await notifier.openConversation('target');
+      await settle();
+
+      final state = t.container.read(conversationProvider);
+      expect(state.conversationId, 'target');
+      expect(state.messages.map((m) => m.content).toList(), ['saved question']);
+      expect(
+        t.repository.savedTurns
+            .where((turn) => turn.message.role == ChatRole.assistant)
+            .map((turn) => turn.message.content)
+            .toList(),
+        ['partial'],
+        reason: 'the partial stays in the conversation being left',
+      );
+      expect(t.service.requests, hasLength(1),
+          reason: 'switching does not start a new request');
+    });
+
+    test('switching when no answer text arrived commits nothing', () async {
+      final repository = FakeConversationRepository(
+        conversations: [
+          ConversationSummary(
+            id: 'target',
+            title: 'Target',
+            updatedAt: DateTime(2024, 1, 1),
+          ),
+        ],
+        messagesByConversation: {
+          'target': const [
+            ChatMessage(role: ChatRole.user, content: 'saved question'),
+          ],
+        },
+      );
+      final t = createTestContainer(repository: repository);
+      await t.container.read(profileProvider.notifier).save(testProfile);
+      final notifier = t.container.read(conversationProvider.notifier);
+
+      notifier.send('outgoing');
+      await settle();
+      await notifier.openConversation('target');
+      await settle();
+
+      expect(
+        t.repository.savedTurns
+            .where((turn) => turn.message.role == ChatRole.assistant),
+        isEmpty,
+        reason: 'cancel without answer text commits no assistant turn',
+      );
+      final state = t.container.read(conversationProvider);
+      expect(state.conversationId, 'target');
+    });
+
+    test('a load failure leaves the current conversation usable', () async {
+      final t = createTestContainer();
+      await t.container.read(profileProvider.notifier).save(testProfile);
+      final notifier = t.container.read(conversationProvider.notifier);
+
+      notifier.send('outgoing');
+      await settle();
+      t.service.emit(0, const [StreamDelta(content: 'partial')]);
+      await settle();
+      t.repository.loadError = StateError('unavailable');
+
+      await notifier.openConversation('target');
+      await settle();
+
+      final state = t.container.read(conversationProvider);
+      expect(state.conversationId, isNotNull);
+      expect(
+        state.messages.map((m) => m.content).toList(),
+        ['outgoing', 'partial'],
+      );
+      expect(state.historyNotice, contains('could not be loaded'));
+      expect(state.draft, isNull);
     });
   });
 }

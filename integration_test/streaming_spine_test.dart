@@ -13,7 +13,9 @@
 //     --dart-define=NATTER_BAD_URL=http://<llama-swap-host>:1/v1 \
 //     --dart-define=NATTER_PLAIN_MODEL=gemma4-26b-a4b \
 //     --dart-define=NATTER_THINKING_MODEL=qwen3.6-35b-a3b \
-//     --dart-define=NATTER_API_KEY=
+//     --dart-define=NATTER_API_KEY= \
+//     --dart-define=NATTER_BLACK_HOLE_URL=http://<dev-box>:9/v1 \
+//     --dart-define=NATTER_STALL_URL=http://<dev-box>:8010/v1/stall
 //
 // Start each round from a clean slate so the "not configured yet" assertions
 // mean something: `adb -s <device> shell pm clear dev.natter.app`.
@@ -36,6 +38,8 @@ const plainModel = String.fromEnvironment('NATTER_PLAIN_MODEL');
 const thinkingModel = String.fromEnvironment('NATTER_THINKING_MODEL');
 const apiKey = String.fromEnvironment('NATTER_API_KEY');
 const mockUrl = String.fromEnvironment('NATTER_MOCK_URL');
+const blackHoleUrl = String.fromEnvironment('NATTER_BLACK_HOLE_URL');
+const stallUrl = String.fromEnvironment('NATTER_STALL_URL');
 
 // Emitted only as `reasoning_content` by integration_test/support's mock
 // endpoint, so seeing it in the transcript proves the blank-answer fallback.
@@ -211,6 +215,53 @@ void main() {
     );
     expect(retried.answer, isNotEmpty, reason: 'the retry must produce a reply');
   }, timeout: const Timeout(Duration(minutes: 8)));
+
+  testWidgets('timeout: a black-holed endpoint surfaces the banner instead of '
+      'Waiting', (tester) async {
+    await _launch(tester);
+
+    await _configure(tester, endpoint: blackHoleUrl, model: plainModel);
+    final stopwatch = Stopwatch()..start();
+    await _type(tester, 'Say something.');
+    await _tapSend(tester);
+    final failed = await _collect(tester);
+    stopwatch.stop();
+    _report('timeout black hole', failed);
+
+    expect(failed.screen, contains('The endpoint did not respond.'),
+        reason: 'the connect budget must surface the failure');
+    expect(failed.screen, contains('Retry'));
+    expect(failed.answer, isEmpty,
+        reason: 'nothing was streamed, so no assistant turn may appear');
+    expect(_placeholderLabel(tester), isNull,
+        reason: 'the Waiting placeholder must be gone');
+    expect(_placeholderLeaks(failed), isEmpty);
+    debugPrint('black-hole latency=${stopwatch.elapsedMilliseconds}ms');
+  }, timeout: const Timeout(Duration(minutes: 3)));
+
+  testWidgets('timeout: a stalled stream keeps the partial answer and shows '
+      'the banner', (tester) async {
+    await _launch(tester);
+
+    await _configure(tester, endpoint: stallUrl, model: 'mock-stall');
+    final stopwatch = Stopwatch()..start();
+    await _type(tester, 'Say something with a few sentences.');
+    await _tapSend(tester);
+    final stalled = await _collect(tester);
+    stopwatch.stop();
+    _report('timeout stalled stream', stalled);
+
+    expect(stalled.screen, contains('The reply stopped arriving.'),
+        reason: 'the silence bound must surface its own message');
+    expect(stalled.screen, contains('Retry'));
+    expect(stalled.answer, isNotEmpty,
+        reason: 'the answer text already delivered must be kept');
+    expect(stalled.answer, contains('starts normally'),
+        reason: 'the committed turn must be the streamed partial, not empty');
+    expect(_placeholderLabel(tester), isNull);
+    expect(_placeholderLeaks(stalled), isEmpty);
+    debugPrint('stalled-stream latency=${stopwatch.elapsedMilliseconds}ms');
+  }, timeout: const Timeout(Duration(minutes: 3)));
 }
 
 /// A record of one reply, folded from the frames observed while it streamed.

@@ -54,6 +54,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     _scrollToBottom();
 
     return Scaffold(
+      drawer: const _HistoryDrawer(),
       appBar: AppBar(
         title: const Text('Natter'),
         actions: [
@@ -94,6 +95,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 onRetry: notifier.retry,
                 onDismiss: notifier.dismissError,
               ),
+            if (conversation.historyNotice != null)
+              _HistoryNoticeBanner(
+                message: conversation.historyNotice!,
+                onDismiss: notifier.dismissHistoryNotice,
+              ),
             _Composer(
               controller: _input,
               isStreaming: conversation.isStreaming,
@@ -112,6 +118,76 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   ),
                 ),
               ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HistoryDrawer extends ConsumerWidget {
+  const _HistoryDrawer();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final conversations = ref.watch(conversationListProvider);
+    final notifier = ref.read(conversationProvider.notifier);
+    // Riverpod retries a failing stream automatically, so the state can be
+    // AsyncLoading with an error attached. Treat any error as unavailable.
+    final unavailable = conversations.hasError;
+    return Drawer(
+      child: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                'History',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.add_comment_outlined),
+              title: const Text('New chat'),
+              onTap: () {
+                Navigator.of(context).pop();
+                notifier.startNewChat();
+              },
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: unavailable
+                  ? const Center(child: Text('History unavailable.'))
+                  : conversations.when(
+                      data: (items) {
+                        if (items.isEmpty) {
+                          return const Center(
+                            child: Text('No conversations yet.'),
+                          );
+                        }
+                        return ListView.builder(
+                          itemCount: items.length,
+                          itemBuilder: (context, index) {
+                            final summary = items[index];
+                            return ListTile(
+                              title: Text(summary.title),
+                              onTap: () {
+                                Navigator.of(context).pop();
+                                notifier.openConversation(summary.id);
+                              },
+                            );
+                          },
+                        );
+                      },
+                      loading: () => const Center(
+                        child: Text('Loading...'),
+                      ),
+                      error: (error, stack) => const Center(
+                        child: Text('History unavailable.'),
+                      ),
+                    ),
+            ),
           ],
         ),
       ),
@@ -205,6 +281,45 @@ class _ErrorBanner extends StatelessWidget {
             TextButton(onPressed: onRetry, child: const Text('Retry')),
             IconButton(
               icon: Icon(Icons.close, color: scheme.onErrorContainer),
+              onPressed: onDismiss,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A storage failure warning: no Retry, because retrying a save would re-send
+/// the conversation. The turn stays visible; the notice only reports.
+class _HistoryNoticeBanner extends StatelessWidget {
+  const _HistoryNoticeBanner({
+    required this.message,
+    required this.onDismiss,
+  });
+
+  final String message;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.tertiaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+        child: Row(
+          children: [
+            Icon(Icons.info_outline, color: scheme.onTertiaryContainer),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                message,
+                style: TextStyle(color: scheme.onTertiaryContainer),
+              ),
+            ),
+            IconButton(
+              icon: Icon(Icons.close, color: scheme.onTertiaryContainer),
               onPressed: onDismiss,
             ),
           ],

@@ -1,6 +1,6 @@
 # Validation record: on-device (tasks 7.1, 7.3)
 
-Device: <device>, Android 17 / API 37, connected by wireless adb.
+Device: `<device>`, Android 17 / API 37, connected by wireless adb.
 Endpoint: llama-swap on the LAN at `http://<llama-swap-host>:8000/v1`
 (a llama.cpp front, which is the endpoint family this change exists for).
 Models: `gemma4-26b-a4b` (streams `content` only), `qwen3.6-35b-a3b`

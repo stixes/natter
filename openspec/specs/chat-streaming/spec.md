@@ -84,9 +84,60 @@ The app SHALL let the user cancel an in-flight stream, SHALL surface an error an
 - **WHEN** the user retries after a failed reply
 - **THEN** a new request is sent using the existing conversation
 
-### Requirement: Ephemeral conversation
-For this change the conversation SHALL live only in memory for the current app session and MUST NOT be written to persistent storage.
+### Requirement: Bounded silence from an unresponsive endpoint
+The app SHALL NOT wait indefinitely for an endpoint to make progress. It SHALL bound the
+wait for an endpoint to begin responding, and the silence once a stream has begun; when a
+bound expires the request SHALL end as a failure surfaced with Retry. Receiving any bytes
+on an open stream, including answer text, reasoning, or SSE keepalive comments, SHALL count
+as progress and reset the silence bound. The bounds SHALL NOT be user-configurable.
 
-#### Scenario: Session restart clears the conversation
-- **WHEN** the app is closed and reopened
-- **THEN** the previous conversation is not restored
+#### Scenario: Endpoint never begins responding
+- **WHEN** a send targets a base URL that establishes no usable connection, or opens one and
+  never begins a response
+- **THEN** within the bound the `Waiting` placeholder is replaced by a surfaced failure with
+  Retry, and the conversation up to and including the user's message is unchanged
+
+#### Scenario: Endpoint goes silent mid-reply
+- **WHEN** a stream has delivered answer text and then delivers nothing for longer than the
+  silence bound
+- **THEN** the request ends as a surfaced failure with Retry, and the answer text already
+  delivered is kept as the assistant reply rather than discarded
+
+#### Scenario: Slow but alive endpoint is not punished
+- **WHEN** an endpoint keeps the stream open and keeps producing bytes, however slowly
+- **THEN** no bound expires and the reply continues to completion
+
+#### Scenario: Cold start of a local server is tolerated
+- **WHEN** a local endpoint is slow to begin responding because it is loading a model
+- **THEN** the app waits at least the full bound for it to begin, and only then fails
+
+#### Scenario: Bounds are not settings
+- **WHEN** the user configures an endpoint
+- **THEN** no timeout value is offered, and the bounds are the app's own
+
+### Requirement: Durable endpoint configuration
+The app SHALL write the configured base URL and model name to durable on-device settings
+and restore them when the app starts, so an endpoint configured once remains in use after
+a restart. The API key MUST NOT be written to that settings store; it SHALL continue to
+reside only in secure, keystore-backed storage.
+
+#### Scenario: Configuration survives a restart
+- **WHEN** the user saves a base URL and model name, closes the app, and opens it again
+- **THEN** the endpoint counts as configured and chat requests use the saved base URL and
+  model without the user entering them again
+
+#### Scenario: The API key stays out of plain settings
+- **WHEN** the user saves an endpoint that includes an API key
+- **THEN** the key is present only in secure storage and absent from the durable plain
+  settings that hold the base URL and model
+
+#### Scenario: A keyless endpoint survives a restart
+- **WHEN** the user saves a base URL and model name with no API key and restarts the app
+- **THEN** the base URL and model are restored, the endpoint still counts as configured,
+  and requests carry no `Authorization` header
+
+#### Scenario: First launch after the upgrade
+- **WHEN** the app starts with an API key already in secure storage but no saved base URL
+  or model
+- **THEN** the endpoint counts as unconfigured until the user saves a base URL and model,
+  after which both persist across later restarts

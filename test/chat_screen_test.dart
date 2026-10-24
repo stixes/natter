@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:natter/domain/chat_message.dart';
+import 'package:natter/domain/conversation_summary.dart';
 import 'package:natter/domain/endpoint_profile.dart';
 import 'package:natter/domain/stream_delta.dart';
 import 'package:natter/state/chat_providers.dart';
@@ -160,6 +162,35 @@ void main() {
     );
   });
 
+  testWidgets('a timed-out request replaces Waiting with the error banner and '
+      'Retry re-sends the conversation', (tester) async {
+    final t = createTestContainer();
+    await t.container.read(profileProvider.notifier).save(testProfile);
+    await tester.pumpWidget(_app(t.container));
+
+    await _sendMessage(tester, 'hi');
+    expect(find.textContaining('Waiting'), findsOneWidget);
+
+    t.service.fail(
+      0,
+      const ChatRequestFailure('The endpoint did not respond.'),
+    );
+    await tester.pump();
+
+    expect(find.textContaining('Waiting'), findsNothing);
+    expect(find.text('The endpoint did not respond.'), findsOneWidget);
+    expect(find.text('Retry'), findsOneWidget);
+
+    await tester.tap(find.text('Retry'));
+    await tester.pump();
+    expect(t.service.requests, hasLength(2));
+    expect(
+      t.service.requests.last.messages.map((m) => m.content).toList(),
+      ['hi'],
+    );
+    expect(find.textContaining('Waiting'), findsOneWidget);
+  });
+
   testWidgets('blank answer with reasoning renders the reasoning as the answer',
       (tester) async {
     final t = createTestContainer();
@@ -184,6 +215,9 @@ void main() {
 
     await tester.tap(find.byIcon(Icons.settings_outlined));
     await tester.pumpAndSettle();
+
+    expect(find.byType(TextField), findsNWidgets(3),
+        reason: 'settings must expose only base URL, API key, and model');
 
     final fields = find.byType(TextField);
     await tester.enterText(fields.at(0), 'http://192.0.2.10:8080/v1');
@@ -291,5 +325,246 @@ void main() {
         reason: 'and the request must go out');
     expect(t.service.requests.single.profile.apiKey, '',
         reason: 'an empty key must stay empty rather than be invented');
+  });
+
+  group('history drawer', () {
+    testWidgets('lists conversations newest first', (tester) async {
+      final repository = FakeConversationRepository(
+        conversations: [
+          ConversationSummary(
+            id: 'old',
+            title: 'Older conversation',
+            updatedAt: DateTime(2024, 1, 1),
+          ),
+          ConversationSummary(
+            id: 'new',
+            title: 'Newest conversation',
+            updatedAt: DateTime(2024, 2, 1),
+          ),
+        ],
+      );
+      final t = createTestContainer(repository: repository);
+      await t.container.read(profileProvider.notifier).save(testProfile);
+      await tester.pumpWidget(_app(t.container));
+
+      await tester.tap(find.byTooltip('Open navigation menu'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      final newest = tester.getTopLeft(find.text('Newest conversation')).dy;
+      final older = tester.getTopLeft(find.text('Older conversation')).dy;
+      expect(newest, lessThan(older),
+          reason: 'the most recently updated conversation is listed first');
+    });
+
+    testWidgets('shows an empty state when no history exists', (tester) async {
+      final t = createTestContainer();
+      await t.container.read(profileProvider.notifier).save(testProfile);
+      await tester.pumpWidget(_app(t.container));
+
+      await tester.tap(find.byTooltip('Open navigation menu'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('No conversations yet.'), findsOneWidget);
+    });
+
+    testWidgets('New chat keeps earlier conversations in the drawer',
+        (tester) async {
+      final t = createTestContainer();
+      await t.container.read(profileProvider.notifier).save(testProfile);
+      await tester.pumpWidget(_app(t.container));
+
+      await _sendMessage(tester, 'first conversation');
+      t.service.emit(0, const [StreamDelta(content: 'reply')]);
+      t.service.end(0);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('Open navigation menu'));
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: find.byType(Drawer),
+          matching: find.text('first conversation'),
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.text('New chat'));
+      await tester.pumpAndSettle();
+      expect(find.text('New chat'), findsNothing,
+          reason: 'the drawer closes after New chat');
+
+      await tester.tap(find.byTooltip('Open navigation menu'));
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: find.byType(Drawer),
+          matching: find.text('first conversation'),
+        ),
+        findsOneWidget,
+        reason: 'starting a new chat leaves earlier conversations stored',
+      );
+    });
+
+    testWidgets('selecting a conversation loads its messages',
+        (tester) async {
+      final repository = FakeConversationRepository(
+        conversations: [
+          ConversationSummary(
+            id: 'target',
+            title: 'Target conversation',
+            updatedAt: DateTime(2024, 1, 1),
+          ),
+        ],
+        messagesByConversation: {
+          'target': const [
+            ChatMessage(role: ChatRole.user, content: 'target question'),
+            ChatMessage(role: ChatRole.assistant, content: 'target answer'),
+          ],
+        },
+      );
+      final t = createTestContainer(repository: repository);
+      await t.container.read(profileProvider.notifier).save(testProfile);
+      await tester.pumpWidget(_app(t.container));
+
+      await tester.tap(find.byTooltip('Open navigation menu'));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.descendant(
+          of: find.byType(Drawer),
+          matching: find.text('Target conversation'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('target question'), findsOneWidget);
+      expect(find.text('target answer'), findsOneWidget);
+      expect(find.text('New chat'), findsNothing,
+          reason: 'selecting a conversation closes the drawer');
+    });
+  });
+
+  group('restored conversation', () {
+    testWidgets('restores a saved conversation with its turns in order',
+        (tester) async {
+      final repository = FakeConversationRepository(
+        conversations: [
+          ConversationSummary(
+            id: 'saved',
+            title: 'Saved conversation',
+            updatedAt: DateTime(2024, 1, 1),
+          ),
+        ],
+        messagesByConversation: {
+          'saved': const [
+            ChatMessage(role: ChatRole.user, content: 'first question'),
+            ChatMessage(role: ChatRole.assistant, content: 'first answer'),
+            ChatMessage(role: ChatRole.user, content: 'second question'),
+            ChatMessage(role: ChatRole.assistant, content: 'second answer'),
+          ],
+        },
+      );
+      final t = createTestContainer(repository: repository);
+      await t.container.read(profileProvider.notifier).save(testProfile);
+      await t.container.read(conversationProvider.notifier).restoreMostRecent();
+      await tester.pumpWidget(_app(t.container));
+      await tester.pump();
+
+      final first = tester.getTopLeft(find.text('first question')).dy;
+      final second = tester.getTopLeft(find.text('first answer')).dy;
+      final third = tester.getTopLeft(find.text('second question')).dy;
+      final fourth = tester.getTopLeft(find.text('second answer')).dy;
+      expect(first < second, isTrue, reason: 'turns keep their stored order');
+      expect(second < third, isTrue);
+      expect(third < fourth, isTrue);
+    });
+
+    testWidgets('a long restored conversation opens scrolled to the bottom',
+        (tester) async {
+      final repository = FakeConversationRepository(
+        conversations: [
+          ConversationSummary(
+            id: 'saved',
+            title: 'Long conversation',
+            updatedAt: DateTime(2024, 1, 1),
+          ),
+        ],
+        messagesByConversation: {
+          'saved': [
+            for (var i = 0; i < 12; i++)
+              ChatMessage(
+                role: i.isEven ? ChatRole.user : ChatRole.assistant,
+                content: 'message $i',
+              ),
+          ],
+        },
+      );
+      final t = createTestContainer(repository: repository);
+      await t.container.read(profileProvider.notifier).save(testProfile);
+      await t.container.read(conversationProvider.notifier).restoreMostRecent();
+      await tester.pumpWidget(_app(t.container));
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text('message 11'), findsOneWidget);
+      final position = tester
+          .state<ScrollableState>(find.byType(Scrollable).first)
+          .position;
+      expect(position.pixels, position.maxScrollExtent,
+          reason: 'the restored list opens at its newest turn');
+    });
+  });
+
+  group('history failures', () {
+    testWidgets('a save failure warns without Retry and keeps the turn',
+        (tester) async {
+      final t = createTestContainer();
+      await t.container.read(profileProvider.notifier).save(testProfile);
+      t.repository.saveError = Exception('disk full');
+      await tester.pumpWidget(_app(t.container));
+      await _sendMessage(tester, 'keep me');
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text('keep me'), findsOneWidget,
+          reason: 'the user turn stays visible despite the failed save');
+      expect(find.text('This turn was not saved to history.'),
+          findsOneWidget);
+      expect(find.text('Retry'), findsNothing,
+          reason: 'retrying a storage failure would re-send the conversation');
+
+      await tester.tap(find.byIcon(Icons.close));
+      await tester.pump();
+      expect(find.text('This turn was not saved to history.'), findsNothing);
+    });
+
+    testWidgets('a load failure warns without Retry', (tester) async {
+      final t = createTestContainer();
+      await t.container.read(profileProvider.notifier).save(testProfile);
+      t.repository.loadError = Exception('corrupt');
+      await tester.pumpWidget(_app(t.container));
+      await t.container.read(conversationProvider.notifier).restoreMostRecent();
+      await tester.pump();
+
+      expect(find.text('History could not be loaded.'), findsOneWidget);
+      expect(find.text('Retry'), findsNothing);
+    });
+
+    testWidgets('the drawer shows History unavailable when the list errors',
+        (tester) async {
+      final t = createTestContainer();
+      await t.container.read(profileProvider.notifier).save(testProfile);
+      t.repository.watchError = Exception('db closed');
+      await tester.pumpWidget(_app(t.container));
+      await tester.pump();
+
+      await tester.tap(find.byTooltip('Open navigation menu'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump();
+
+      expect(find.text('History unavailable.'), findsOneWidget);
+      expect(find.text('No conversations yet.'), findsNothing);
+    });
   });
 }
