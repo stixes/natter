@@ -18,8 +18,30 @@ rules:
     - One screen or subsystem per proposal; several tiny changes beat one rewrite
     - A new dependency, permission, or network destination carries its reason
       in one sentence
+    - "Name the user-facing surface and its UX impact per
+      openspec/design-ux-guidelines.md, or state that the change has no
+      user-facing surface"
+  specs:
+    - "For user-facing behavior, scenarios cover loading, empty, error, and
+      cancellation where relevant; cite openspec/design-ux-guidelines.md and
+      state the accessibility expectation when the change affects it"
+  design:
+    - "Include a `## UX and interaction` section covering states, motion,
+      accessibility, copy, and dark mode; cite openspec/design-ux-guidelines.md;
+      state when a row does not apply"
   tasks:
     - A task that touches the network path closes with an on-device round
       against a live endpoint, recorded in validation.md under the change
     - Every task names the check that closes it, a command or a behaviour
       observed on the device
+    - Reference existing patterns before inventing new ones
+    - "A UI task names the states it implements and how to verify them; a
+      visual change owes an on-device look on the emulator on <dev-box>, or on
+      <device> as a fallback"
+
+operations:
+  apply:
+    guidance:
+      - "Before marking a UI task done, check the implementation against
+        openspec/design-ux-guidelines.md and note any deliberate exception in
+        the task or a follow-up"
