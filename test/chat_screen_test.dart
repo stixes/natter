@@ -9,6 +9,7 @@ import 'package:natter/state/chat_providers.dart';
 import 'package:natter/ui/chat_screen.dart';
 import 'package:natter/data/chat_completions_client.dart';
 import 'package:natter/ui/message_bubble.dart';
+import 'package:natter/ui/natter_mark.dart';
 
 import 'support/test_support.dart';
 
@@ -565,6 +566,111 @@ void main() {
 
       expect(find.text('History unavailable.'), findsOneWidget);
       expect(find.text('No conversations yet.'), findsNothing);
+    });
+  });
+
+  group('title row', () {
+    void expectMarkBeforeTitle(WidgetTester tester) {
+      final appBar = find.byType(AppBar);
+      final mark = find.descendant(
+        of: appBar,
+        matching: find.byType(NatterMark),
+      );
+      final title = find.descendant(of: appBar, matching: find.text('Natter'));
+      expect(mark, findsOneWidget);
+      expect(title, findsOneWidget);
+      expect(tester.getCenter(mark).dx, lessThan(tester.getCenter(title).dx));
+    }
+
+    testWidgets('shows the mark before the title when the chat is empty', (
+      tester,
+    ) async {
+      final t = createTestContainer();
+      await t.container.read(profileProvider.notifier).save(testProfile);
+      await tester.pumpWidget(_app(t.container));
+
+      expectMarkBeforeTitle(tester);
+    });
+
+    testWidgets('keeps the mark unchanged while streaming and after an error', (
+      tester,
+    ) async {
+      final t = createTestContainer();
+      await t.container.read(profileProvider.notifier).save(testProfile);
+      await tester.pumpWidget(_app(t.container));
+
+      await _sendMessage(tester, 'hi');
+      t.service.emit(0, const [StreamDelta(content: 'par')]);
+      await tester.pump();
+      expectMarkBeforeTitle(tester);
+
+      t.service.fail(0, Exception('boom'));
+      await tester.pump();
+      expect(find.text('Retry'), findsOneWidget);
+      expectMarkBeforeTitle(tester);
+    });
+
+    testWidgets('the mark is decorative: one title label and no tap target', (
+      tester,
+    ) async {
+      final t = createTestContainer();
+      await t.container.read(profileProvider.notifier).save(testProfile);
+      await tester.pumpWidget(_app(t.container));
+
+      expect(find.bySemanticsLabel('Natter'), findsOneWidget);
+      expect(
+        find.ancestor(
+          of: find.byType(NatterMark),
+          matching: find.byType(ExcludeSemantics),
+        ),
+        findsWidgets,
+      );
+      final tappable = find.ancestor(
+        of: find.byType(NatterMark),
+        matching: find.byWidgetPredicate(
+          (w) => w is GestureDetector || w is InkWell,
+        ),
+      );
+      expect(
+        find.descendant(of: find.byType(AppBar), matching: tappable),
+        findsNothing,
+      );
+
+      await tester.tap(find.byTooltip('Open navigation menu'));
+      await tester.pumpAndSettle();
+      expect(find.text('History'), findsOneWidget);
+    });
+
+    testWidgets('fits the app bar at the largest text scale', (tester) async {
+      tester.view.physicalSize = const Size(360, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final t = createTestContainer();
+      await t.container.read(profileProvider.notifier).save(testProfile);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: t.container,
+          child: MaterialApp(
+            builder:
+                (context, child) => MediaQuery(
+                  data: MediaQuery.of(
+                    context,
+                  ).copyWith(textScaler: const TextScaler.linear(2.0)),
+                  child: child!,
+                ),
+            home: const ChatScreen(),
+          ),
+        ),
+      );
+
+      expect(tester.takeException(), isNull);
+      expectMarkBeforeTitle(tester);
+      final endpoint = find.byTooltip('Endpoint');
+      expect(endpoint.hitTestable(), findsOneWidget);
+      expect(
+        tester.getRect(find.text('Natter')).right,
+        lessThanOrEqualTo(tester.getRect(endpoint).left),
+      );
     });
   });
 }

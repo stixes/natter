@@ -6,6 +6,7 @@ import '../domain/chat_message.dart';
 import '../domain/endpoint_profile.dart';
 import '../state/chat_providers.dart';
 import 'message_bubble.dart';
+import 'natter_mark.dart';
 import 'settings_screen.dart';
 
 class ChatScreen extends ConsumerStatefulWidget {
@@ -56,7 +57,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     return Scaffold(
       drawer: const _HistoryDrawer(),
       appBar: AppBar(
-        title: const Text('Natter'),
+        title: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ExcludeSemantics(child: NatterMark()),
+            SizedBox(width: 8),
+            Flexible(
+              child: Text('Natter', overflow: TextOverflow.ellipsis),
+            ),
+          ],
+        ),
         actions: [
           IconButton(
             tooltip: 'Endpoint',

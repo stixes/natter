@@ -2,6 +2,15 @@
 
 Notes here are user-facing, not commit-speak.
 
+## add-app-icon
+
+Natter has a face of its own.
+
+- The home-screen icon is now a chatty little speech bubble instead of the
+  default placeholder, and it follows themed icons on Android 13 and later.
+- The same bubble sits beside the Natter name at the top of the chat screen,
+  in colours that match light and dark mode.
+
 ## local-conversation-history
 
 Your conversations now survive closing the app.

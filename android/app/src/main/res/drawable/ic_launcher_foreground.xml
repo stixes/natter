@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Natter mark on the 108-unit adaptive-icon grid. Every number below
+     transcribes NatterMarkGeometry in lib/ui/natter_mark.dart; change both
+     together. Colours are NatterLauncherPalette. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- tiltDegrees about centre -->
+    <group
+        android:pivotX="54"
+        android:pivotY="54"
+        android:rotation="-8">
+        <!-- bubble 26,30 to 82,72, bubbleRadius 20 -->
+        <path
+            android:fillColor="#EADDFF"
+            android:pathData="M46,30 H62 A20,20 0 0,1 82,50 V52 A20,20 0 0,1 62,72 H46 A20,20 0 0,1 26,52 V50 A20,20 0 0,1 46,30 Z" />
+        <!-- tail -->
+        <path
+            android:fillColor="#EADDFF"
+            android:pathData="M36,64 L50,70 L34,79 Z" />
+        <!-- leftBlush and rightBlush, blushRadii 4.5 x 2.8 -->
+        <path
+            android:fillColor="#EFB8C8"
+            android:pathData="M33.5,57 a4.5,2.8 0 1,0 9,0 a4.5,2.8 0 1,0 -9,0 Z M65.5,57 a4.5,2.8 0 1,0 9,0 a4.5,2.8 0 1,0 -9,0 Z" />
+        <!-- leftEye r4.5, rightEye r5.5, mouth 3.5 x 4 -->
+        <path
+            android:fillColor="#21005D"
+            android:pathData="M39.5,47 a4.5,4.5 0 1,0 9,0 a4.5,4.5 0 1,0 -9,0 Z M58.5,46 a5.5,5.5 0 1,0 11,0 a5.5,5.5 0 1,0 -11,0 Z M52.5,59 a3.5,4 0 1,0 7,0 a3.5,4 0 1,0 -7,0 Z" />
+    </group>
+</vector>
