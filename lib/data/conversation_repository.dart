@@ -70,6 +70,28 @@ class ConversationRepository {
     );
   }
 
+  /// Permanently deletes conversations whose last update is older than [cutoff].
+  ///
+  /// Messages are removed first because the generated database does not enable
+  /// foreign-key cascade. The whole deletion runs in one transaction so a
+  /// failure leaves the database unchanged. Returns the number of conversations
+  /// deleted.
+  Future<int> deleteExpiredBefore(DateTime cutoff) async {
+    return _database.transaction(() async {
+      final expired = await (_database.select(_database.conversations)
+            ..where((row) => row.updatedAt.isSmallerThanValue(cutoff)))
+          .get();
+      if (expired.isEmpty) return 0;
+      final ids = expired.map((conversation) => conversation.id).toList();
+      await (_database.delete(_database.messages)
+            ..where((row) => row.conversationId.isIn(ids)))
+          .go();
+      return (_database.delete(_database.conversations)
+            ..where((row) => row.id.isIn(ids)))
+          .go();
+    });
+  }
+
   /// The most recently updated conversation, or null when history is empty.
   Future<ConversationSummary?> loadMostRecent() async {
     final row = await (_database.select(_database.conversations)
@@ -99,6 +121,7 @@ class ConversationRepository {
                 : ChatRole.user,
             content: row.content,
             reasoning: row.reasoning ?? '',
+            createdAt: row.createdAt,
           ),
         )
         .toList(growable: false);

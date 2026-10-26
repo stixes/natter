@@ -45,8 +45,12 @@ MockClient streamingClient({
 }
 
 void main() {
-  const messages = [
-    ChatMessage(role: ChatRole.user, content: 'what is 2+2?'),
+  final messages = [
+    ChatMessage(
+      role: ChatRole.user,
+      content: 'what is 2+2?',
+      createdAt: DateTime(2026, 1, 1, 9),
+    ),
   ];
 
   test('replays a canned SSE fixture into ordered deltas', () async {
@@ -140,9 +144,17 @@ data: [DONE]
     );
 
     await client
-        .stream(profile: testProfile, messages: const [
-          ChatMessage(role: ChatRole.user, content: 'a'),
-          ChatMessage(role: ChatRole.assistant, content: 'b'),
+        .stream(profile: testProfile, messages: [
+          ChatMessage(
+            role: ChatRole.user,
+            content: 'a',
+            createdAt: DateTime(2026, 1, 1, 9),
+          ),
+          ChatMessage(
+            role: ChatRole.assistant,
+            content: 'b',
+            createdAt: DateTime(2026, 1, 1, 9, 1),
+          ),
         ])
         .toList();
 
@@ -175,7 +187,13 @@ data: [DONE]
             baseUrl: 'http://127.0.0.1:8080/v1',
             model: 'qwen3-test',
           ),
-          messages: const [ChatMessage(role: ChatRole.user, content: 'a')],
+          messages: [
+            ChatMessage(
+              role: ChatRole.user,
+              content: 'a',
+              createdAt: DateTime(2026, 1, 1, 9),
+            ),
+          ],
         )
         .toList();
 

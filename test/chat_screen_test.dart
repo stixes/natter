@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -358,6 +360,114 @@ void main() {
           reason: 'the most recently updated conversation is listed first');
     });
 
+    testWidgets('groups conversations under recency headers', (tester) async {
+      final now = DateTime.now();
+      final repository = FakeConversationRepository(
+        conversations: [
+          ConversationSummary(
+              id: 'today', title: 'Chat from today', updatedAt: now),
+          ConversationSummary(
+              id: 'yday',
+              title: 'Chat from yesterday',
+              updatedAt: now.subtract(const Duration(days: 1))),
+          ConversationSummary(
+              id: 'midweek',
+              title: 'Chat from earlier',
+              updatedAt: now.subtract(const Duration(days: 2))),
+          ConversationSummary(
+              id: 'ancient',
+              title: 'Chat from long ago',
+              updatedAt: now.subtract(const Duration(days: 60))),
+        ],
+      );
+      final t = createTestContainer(repository: repository);
+      await t.container.read(profileProvider.notifier).save(testProfile);
+      await tester.pumpWidget(_app(t.container));
+
+      await tester.tap(find.byTooltip('Open navigation menu'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Today'), findsOneWidget);
+      expect(find.text('Yesterday'), findsOneWidget);
+      expect(find.text('Chat from earlier'), findsOneWidget);
+      expect(find.text('Older'), findsOneWidget);
+
+      // Two days back lands in This week unless the week boundary (Monday)
+      // pushed it into Older; the header follows the same rule.
+      final twoDaysAgoIsThisWeek = DateTime.now().weekday >= 3;
+      expect(
+        find.text('This week'),
+        twoDaysAgoIsThisWeek ? findsOneWidget : findsNothing,
+        reason: 'an empty section renders no header',
+      );
+
+      final todayHeaderY = tester.getTopLeft(find.text('Today')).dy;
+      final todayItemY = tester.getTopLeft(find.text('Chat from today')).dy;
+      final yesterdayHeaderY = tester.getTopLeft(find.text('Yesterday')).dy;
+      final yesterdayItemY =
+          tester.getTopLeft(find.text('Chat from yesterday')).dy;
+      final olderHeaderY = tester.getTopLeft(find.text('Older')).dy;
+      expect(todayHeaderY, lessThan(todayItemY),
+          reason: 'the Today header sits above its conversations');
+      expect(todayItemY, lessThan(yesterdayHeaderY),
+          reason: 'sections run most recent first');
+      expect(yesterdayHeaderY, lessThan(yesterdayItemY));
+      expect(yesterdayItemY, lessThan(olderHeaderY));
+    });
+
+    testWidgets('header rows carry header semantics', (tester) async {
+      final repository = FakeConversationRepository(
+        conversations: [
+          ConversationSummary(
+            id: 'today',
+            title: 'Chat from today',
+            updatedAt: DateTime.now(),
+          ),
+        ],
+      );
+      final t = createTestContainer(repository: repository);
+      await t.container.read(profileProvider.notifier).save(testProfile);
+      await tester.pumpWidget(_app(t.container));
+
+      await tester.tap(find.byTooltip('Open navigation menu'));
+      await tester.pumpAndSettle();
+
+      final headers = find.byWidgetPredicate(
+        (widget) => widget is Semantics && widget.properties.header == true,
+      );
+      expect(headers, findsWidgets,
+          reason: 'screen readers must be able to find section headers');
+      expect(
+        find.descendant(of: headers, matching: find.text('Today')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('the drawer shows Loading... until the first list arrives',
+        (tester) async {
+      final repository = _SlowConversationRepository(
+        conversations: [
+          ConversationSummary(
+            id: 'today',
+            title: 'Chat from today',
+            updatedAt: DateTime.now(),
+          ),
+        ],
+      );
+      final t = createTestContainer(repository: repository);
+      await t.container.read(profileProvider.notifier).save(testProfile);
+      await tester.pumpWidget(_app(t.container));
+
+      await tester.tap(find.byTooltip('Open navigation menu'));
+      await tester.pumpAndSettle();
+      expect(find.text('Loading...'), findsOneWidget);
+
+      repository.releaseFirstBatch();
+      await tester.pumpAndSettle();
+      expect(find.text('Loading...'), findsNothing);
+      expect(find.text('Chat from today'), findsOneWidget);
+    });
+
     testWidgets('shows an empty state when no history exists', (tester) async {
       final t = createTestContainer();
       await t.container.read(profileProvider.notifier).save(testProfile);
@@ -418,9 +528,17 @@ void main() {
           ),
         ],
         messagesByConversation: {
-          'target': const [
-            ChatMessage(role: ChatRole.user, content: 'target question'),
-            ChatMessage(role: ChatRole.assistant, content: 'target answer'),
+          'target': [
+            ChatMessage(
+              role: ChatRole.user,
+              content: 'target question',
+              createdAt: DateTime(2026, 1, 1, 9),
+            ),
+            ChatMessage(
+              role: ChatRole.assistant,
+              content: 'target answer',
+              createdAt: DateTime(2026, 1, 1, 9, 1),
+            ),
           ],
         },
       );
@@ -457,11 +575,27 @@ void main() {
           ),
         ],
         messagesByConversation: {
-          'saved': const [
-            ChatMessage(role: ChatRole.user, content: 'first question'),
-            ChatMessage(role: ChatRole.assistant, content: 'first answer'),
-            ChatMessage(role: ChatRole.user, content: 'second question'),
-            ChatMessage(role: ChatRole.assistant, content: 'second answer'),
+          'saved': [
+            ChatMessage(
+              role: ChatRole.user,
+              content: 'first question',
+              createdAt: DateTime(2026, 1, 1, 9),
+            ),
+            ChatMessage(
+              role: ChatRole.assistant,
+              content: 'first answer',
+              createdAt: DateTime(2026, 1, 1, 9, 1),
+            ),
+            ChatMessage(
+              role: ChatRole.user,
+              content: 'second question',
+              createdAt: DateTime(2026, 1, 1, 9, 2),
+            ),
+            ChatMessage(
+              role: ChatRole.assistant,
+              content: 'second answer',
+              createdAt: DateTime(2026, 1, 1, 9, 3),
+            ),
           ],
         },
       );
@@ -496,6 +630,7 @@ void main() {
               ChatMessage(
                 role: i.isEven ? ChatRole.user : ChatRole.assistant,
                 content: 'message $i',
+                createdAt: DateTime(2026, 1, 1, 9, i),
               ),
           ],
         },
@@ -673,4 +808,20 @@ void main() {
       );
     });
   });
+}
+
+/// A fake whose first emission waits for the test, so the drawer's loading
+/// state is observable.
+class _SlowConversationRepository extends FakeConversationRepository {
+  _SlowConversationRepository({super.conversations});
+
+  final Completer<void> _firstBatch = Completer<void>();
+
+  void releaseFirstBatch() => _firstBatch.complete();
+
+  @override
+  Stream<List<ConversationSummary>> watchConversations() async* {
+    if (!_firstBatch.isCompleted) await _firstBatch.future;
+    yield* super.watchConversations();
+  }
 }

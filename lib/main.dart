@@ -19,6 +19,17 @@ Future<void> main() async {
   );
   // URL/model come from durable settings, the key from the keystore.
   await container.read(profileProvider.notifier).loadStored();
+
+  // Expired chats are gone before anything reads history. A storage failure
+  // here must not stop startup; expiry simply waits for the next launch.
+  try {
+    await container
+        .read(conversationRepositoryProvider)
+        .deleteExpiredBefore(DateTime.now().subtract(const Duration(days: 90)));
+  } catch (error) {
+    debugPrint('Startup expiry cleanup failed: $error');
+  }
+
   await container.read(conversationProvider.notifier).restoreMostRecent();
 
   runApp(

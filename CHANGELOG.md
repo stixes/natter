@@ -2,6 +2,27 @@
 
 Notes here are user-facing, not commit-speak.
 
+## chat-history-grouping-and-expiry
+
+The history list now reads at a glance, and old chats clean themselves up.
+
+- Saved conversations in the history drawer are grouped under headers: Today,
+  Yesterday, This week, and Older. A section with no conversations shows no
+  header, and chats inside each section stay newest first.
+- Chats older than 90 days are removed from the device when Natter starts.
+  Nothing is archived: a chat untouched for three months is deleted for good,
+  so the drawer holds only the recent period you can actually browse.
+
+## add-message-timestamps
+
+Every message now shows when it was sent or answered.
+
+- A small time label sits at the lower right of each message bubble, on the
+  24-hour clock, so a reopened conversation keeps its sense of when things
+  happened.
+- The label stays quiet and follows light and dark mode. It is not a button and
+  does not interrupt the reply as it streams.
+
 ## add-app-icon
 
 Natter has a face of its own.

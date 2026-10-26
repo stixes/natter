@@ -3,8 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../domain/assistant_draft.dart';
 import '../domain/chat_message.dart';
+import '../domain/conversation_summary.dart';
 import '../domain/endpoint_profile.dart';
 import '../state/chat_providers.dart';
+import 'history_grouping.dart';
 import 'message_bubble.dart';
 import 'natter_mark.dart';
 import 'settings_screen.dart';
@@ -93,6 +95,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                           return MessageBubble(
                             content: message.content,
                             isMine: message.role == ChatRole.user,
+                            createdAt: message.createdAt,
                           );
                         }
                         return _DraftBubble(draft: draft!);
@@ -176,17 +179,11 @@ class _HistoryDrawer extends ConsumerWidget {
                             child: Text('No conversations yet.'),
                           );
                         }
-                        return ListView.builder(
-                          itemCount: items.length,
-                          itemBuilder: (context, index) {
-                            final summary = items[index];
-                            return ListTile(
-                              title: Text(summary.title),
-                              onTap: () {
-                                Navigator.of(context).pop();
-                                notifier.openConversation(summary.id);
-                              },
-                            );
+                        return _GroupedHistoryList(
+                          groups: groupConversations(items, DateTime.now()),
+                          onOpen: (summary) {
+                            Navigator.of(context).pop();
+                            notifier.openConversation(summary.id);
                           },
                         );
                       },
@@ -201,6 +198,61 @@ class _HistoryDrawer extends ConsumerWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// The drawer's conversation list partitioned under recency headers.
+///
+/// Sections render top to bottom and an empty section shows no header; the
+/// repository already orders rows newest first, so each section stays
+/// newest first without a further sort.
+class _GroupedHistoryList extends StatelessWidget {
+  const _GroupedHistoryList({required this.groups, required this.onOpen});
+
+  final GroupedHistory groups;
+  final ValueChanged<ConversationSummary> onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final entries = <Object>[];
+    void addSection(String title, List<ConversationSummary> section) {
+      if (section.isEmpty) return;
+      entries
+        ..add(title)
+        ..addAll(section);
+    }
+
+    addSection('Today', groups.today);
+    addSection('Yesterday', groups.yesterday);
+    addSection('This week', groups.thisWeek);
+    addSection('Older', groups.older);
+
+    return ListView.builder(
+      itemCount: entries.length,
+      itemBuilder: (context, index) {
+        final entry = entries[index];
+        if (entry is String) {
+          final theme = Theme.of(context);
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: Semantics(
+              header: true,
+              child: Text(
+                entry,
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          );
+        }
+        final summary = entry as ConversationSummary;
+        return ListTile(
+          title: Text(summary.title),
+          onTap: () => onOpen(summary),
+        );
+      },
     );
   }
 }

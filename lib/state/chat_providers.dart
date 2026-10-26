@@ -176,7 +176,11 @@ class ConversationController extends Notifier<ConversationState> {
     if (trimmed.isEmpty) return;
 
     final profile = ref.read(profileProvider);
-    final userTurn = ChatMessage(role: ChatRole.user, content: trimmed);
+    final userTurn = ChatMessage(
+      role: ChatRole.user,
+      content: trimmed,
+      createdAt: DateTime.now(),
+    );
     final messages = [...state.messages, userTurn];
     final conversationId = state.conversationId ?? _newConversationId();
     final title = _titleFor(messages);
@@ -193,6 +197,7 @@ class ConversationController extends Notifier<ConversationState> {
         conversationId: conversationId,
         message: userTurn,
         title: title,
+        at: userTurn.createdAt,
       );
     } catch (_) {
       state = state.copy(historyNotice: 'This turn was not saved to history.');
@@ -249,6 +254,7 @@ class ConversationController extends Notifier<ConversationState> {
             role: ChatRole.assistant,
             content: partial,
             reasoning: draft.reasoning,
+            createdAt: DateTime.now(),
           );
     final conversationId = state.conversationId;
     state = ConversationState(
@@ -364,6 +370,7 @@ class ConversationController extends Notifier<ConversationState> {
             role: ChatRole.assistant,
             content: content,
             reasoning: draft.reasoning,
+            createdAt: DateTime.now(),
           );
     final conversationId = state.conversationId;
     state = ConversationState(
@@ -389,6 +396,7 @@ class ConversationController extends Notifier<ConversationState> {
       await _repository.saveTurn(
         conversationId: conversationId,
         message: message,
+        at: message.createdAt,
       );
     } catch (_) {
       state = state.copy(historyNotice: 'This turn was not saved to history.');
@@ -411,6 +419,7 @@ class ConversationController extends Notifier<ConversationState> {
         role: ChatRole.assistant,
         content: draft.answer,
         reasoning: draft.reasoning,
+        createdAt: DateTime.now(),
       );
       final conversationId = state.conversationId;
       state = ConversationState(

@@ -57,11 +57,13 @@ class SavedTurn {
     required this.conversationId,
     required this.message,
     this.title,
+    this.at,
   });
 
   final String conversationId;
   final ChatMessage message;
   final String? title;
+  final DateTime? at;
 }
 
 /// A deterministic repository seam for controller and widget tests.
@@ -128,7 +130,12 @@ class FakeConversationRepository implements ConversationRepository {
   }) async {
     if (saveError != null) throw saveError!;
     savedTurns.add(
-      SavedTurn(conversationId: conversationId, message: message, title: title),
+      SavedTurn(
+        conversationId: conversationId,
+        message: message,
+        title: title,
+        at: at,
+      ),
     );
     _messages.add(message);
     final index = _conversations.indexWhere((c) => c.id == conversationId);
@@ -143,6 +150,16 @@ class FakeConversationRepository implements ConversationRepository {
       _conversations.add(summary);
     }
     _watches.add(_ordered);
+  }
+
+  @override
+  Future<int> deleteExpiredBefore(DateTime cutoff) async {
+    final expired =
+        _conversations.where((c) => c.updatedAt.isBefore(cutoff)).toList();
+    if (expired.isEmpty) return 0;
+    _conversations.removeWhere((c) => c.updatedAt.isBefore(cutoff));
+    _watches.add(_ordered);
+    return expired.length;
   }
 
   @override

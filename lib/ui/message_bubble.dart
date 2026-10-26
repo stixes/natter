@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'message_time.dart';
+
 /// The waiting-for-answer affordance: a label plus dots that animate on their
 /// own frame timer, independent of token arrival.
 ///
@@ -60,11 +62,13 @@ class MessageBubble extends StatelessWidget {
     required this.content,
     required this.isMine,
     this.placeholderLabel,
+    this.createdAt,
   });
 
   final String content;
   final bool isMine;
   final String? placeholderLabel;
+  final DateTime? createdAt;
 
   @override
   Widget build(BuildContext context) {
@@ -85,7 +89,7 @@ class MessageBubble extends StatelessWidget {
           borderRadius: BorderRadius.circular(18),
         ),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.end,
           mainAxisSize: MainAxisSize.min,
           children: [
             if (content.isNotEmpty)
@@ -93,6 +97,15 @@ class MessageBubble extends StatelessWidget {
             if (placeholderLabel != null) AnimatedPlaceholder(
               label: placeholderLabel!,
             ),
+            if (createdAt != null)
+              Text(
+                formatMessageTime(createdAt!),
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: isMine
+                      ? scheme.onPrimaryContainer
+                      : scheme.onSurface,
+                ),
+              ),
           ],
         ),
       ),

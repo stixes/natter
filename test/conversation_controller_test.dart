@@ -64,6 +64,34 @@ void main() {
       expect(state.messages.map((m) => m.content).toList(), ['hi', 'Hello']);
     });
 
+    test('committed turns keep the same creation time in memory and storage',
+        () async {
+      final t = createTestContainer();
+      final notifier = t.container.read(conversationProvider.notifier);
+      await t.container.read(profileProvider.notifier).save(testProfile);
+      notifier.send('hi');
+      await settle();
+
+      final userTurn = t.container.read(conversationProvider).messages.single;
+      expect(userTurn.role, ChatRole.user);
+      final savedUser = t.repository.savedTurns.single;
+      expect(savedUser.message.createdAt, userTurn.createdAt);
+      expect(savedUser.at, userTurn.createdAt);
+
+      t.service.emit(0, const [StreamDelta(content: 'Hello')]);
+      t.service.end(0);
+      await settle();
+
+      final assistantTurn =
+          t.container.read(conversationProvider).messages.last;
+      expect(assistantTurn.role, ChatRole.assistant);
+      final savedAssistant = t.repository.savedTurns
+          .where((turn) => turn.message.role == ChatRole.assistant)
+          .single;
+      expect(savedAssistant.message.createdAt, assistantTurn.createdAt);
+      expect(savedAssistant.at, assistantTurn.createdAt);
+    });
+
     test('reasoning is retained on the message but never in the answer', () async {
       final t = createTestContainer();
       final notifier = t.container.read(conversationProvider.notifier);
@@ -463,9 +491,17 @@ void main() {
       );
       final repository = FakeConversationRepository(
         conversations: [summary],
-        messages: const [
-          ChatMessage(role: ChatRole.user, content: 'hello'),
-          ChatMessage(role: ChatRole.assistant, content: 'hi'),
+        messages: [
+          ChatMessage(
+            role: ChatRole.user,
+            content: 'hello',
+            createdAt: DateTime(2026, 1, 1, 9),
+          ),
+          ChatMessage(
+            role: ChatRole.assistant,
+            content: 'hi',
+            createdAt: DateTime(2026, 1, 1, 9, 1),
+          ),
         ],
       );
       final t = createTestContainer(repository: repository);
@@ -784,9 +820,17 @@ void main() {
       final repository = FakeConversationRepository(
         conversations: [target],
         messagesByConversation: {
-          'target': const [
-            ChatMessage(role: ChatRole.user, content: 'saved question'),
-            ChatMessage(role: ChatRole.assistant, content: 'saved answer'),
+          'target': [
+            ChatMessage(
+              role: ChatRole.user,
+              content: 'saved question',
+              createdAt: DateTime(2026, 1, 1, 9),
+            ),
+            ChatMessage(
+              role: ChatRole.assistant,
+              content: 'saved answer',
+              createdAt: DateTime(2026, 1, 1, 9, 1),
+            ),
           ],
         },
       );
@@ -816,8 +860,12 @@ void main() {
           ),
         ],
         messagesByConversation: {
-          'target': const [
-            ChatMessage(role: ChatRole.user, content: 'saved question'),
+          'target': [
+            ChatMessage(
+              role: ChatRole.user,
+              content: 'saved question',
+              createdAt: DateTime(2026, 1, 1, 9),
+            ),
           ],
         },
       );
@@ -858,8 +906,12 @@ void main() {
           ),
         ],
         messagesByConversation: {
-          'target': const [
-            ChatMessage(role: ChatRole.user, content: 'saved question'),
+          'target': [
+            ChatMessage(
+              role: ChatRole.user,
+              content: 'saved question',
+              createdAt: DateTime(2026, 1, 1, 9),
+            ),
           ],
         },
       );

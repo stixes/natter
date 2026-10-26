@@ -22,9 +22,10 @@ void main() {
       await repository.saveTurn(
         conversationId: 'conversation-1',
         title: 'Hello there',
-        message: const ChatMessage(
+        message: ChatMessage(
           role: ChatRole.user,
           content: 'Hello there',
+          createdAt: DateTime(2024, 1, 1, 12),
         ),
       );
 
@@ -53,13 +54,13 @@ void main() {
       await repository.saveTurn(
         conversationId: 'a',
         title: 'Conversation A',
-        message: const ChatMessage(role: ChatRole.user, content: 'first'),
+        message: ChatMessage(role: ChatRole.user, content: 'first', createdAt: DateTime(2024, 1, 1, 12)),
         at: DateTime(2024, 1, 1, 12),
       );
       await repository.saveTurn(
         conversationId: 'b',
         title: 'Conversation B',
-        message: const ChatMessage(role: ChatRole.user, content: 'second'),
+        message: ChatMessage(role: ChatRole.user, content: 'second', createdAt: DateTime(2024, 1, 1, 12)),
         at: DateTime(2024, 1, 2, 12),
       );
 
@@ -70,7 +71,7 @@ void main() {
       // A later turn on A bumps it above B and leaves its title alone.
       await repository.saveTurn(
         conversationId: 'a',
-        message: const ChatMessage(role: ChatRole.assistant, content: 'reply'),
+        message: ChatMessage(role: ChatRole.assistant, content: 'reply', createdAt: DateTime(2024, 1, 1, 12)),
         at: DateTime(2024, 1, 3, 12),
       );
 
@@ -84,17 +85,17 @@ void main() {
       await repository.saveTurn(
         conversationId: 'c',
         title: 'Conversation C',
-        message: const ChatMessage(role: ChatRole.user, content: 'first'),
+        message: ChatMessage(role: ChatRole.user, content: 'first', createdAt: DateTime(2024, 1, 1, 12)),
         at: DateTime(2024, 1, 1, 12),
       );
       await repository.saveTurn(
         conversationId: 'c',
-        message: const ChatMessage(role: ChatRole.assistant, content: 'second'),
+        message: ChatMessage(role: ChatRole.assistant, content: 'second', createdAt: DateTime(2024, 1, 1, 12)),
         at: DateTime(2024, 1, 2, 12),
       );
       await repository.saveTurn(
         conversationId: 'c',
-        message: const ChatMessage(role: ChatRole.user, content: 'third'),
+        message: ChatMessage(role: ChatRole.user, content: 'third', createdAt: DateTime(2024, 1, 1, 12)),
         at: DateTime(2024, 1, 3, 12),
       );
 
@@ -111,12 +112,12 @@ void main() {
       await repository.saveTurn(
         conversationId: 'd',
         title: 'Conversation D',
-        message: const ChatMessage(role: ChatRole.user, content: 'one'),
+        message: ChatMessage(role: ChatRole.user, content: 'one', createdAt: DateTime(2024, 1, 1, 12)),
         at: sameMoment,
       );
       await repository.saveTurn(
         conversationId: 'd',
-        message: const ChatMessage(role: ChatRole.user, content: 'two'),
+        message: ChatMessage(role: ChatRole.user, content: 'two', createdAt: DateTime(2024, 1, 1, 12)),
         at: sameMoment,
       );
 
@@ -128,14 +129,15 @@ void main() {
       await repository.saveTurn(
         conversationId: 'e',
         title: 'Conversation E',
-        message: const ChatMessage(role: ChatRole.user, content: 'question'),
+        message: ChatMessage(role: ChatRole.user, content: 'question', createdAt: DateTime(2024, 1, 1, 12)),
       );
       await repository.saveTurn(
         conversationId: 'e',
-        message: const ChatMessage(
+        message: ChatMessage(
           role: ChatRole.assistant,
           content: 'answer',
           reasoning: 'hidden chain of thought',
+          createdAt: DateTime(2024, 1, 1, 12),
         ),
       );
 
@@ -149,17 +151,90 @@ void main() {
       expect(rows[1].reasoning, 'hidden chain of thought');
     });
 
+    test('round-trips a turn creation time', () async {
+      final knownTime = DateTime(2024, 5, 6, 7, 8);
+      await repository.saveTurn(
+        conversationId: 'time',
+        title: 'Conversation Time',
+        message: ChatMessage(
+          role: ChatRole.user,
+          content: 'timed turn',
+          createdAt: knownTime,
+        ),
+        at: knownTime,
+      );
+
+      final messages = await repository.loadMessages('time');
+      expect(messages, hasLength(1));
+      expect(messages.single.createdAt, knownTime);
+    });
+
     test('a user-only turn leaves no assistant message', () async {
       await repository.saveTurn(
         conversationId: 'f',
         title: 'Conversation F',
-        message: const ChatMessage(role: ChatRole.user, content: 'only turn'),
+        message: ChatMessage(role: ChatRole.user, content: 'only turn', createdAt: DateTime(2024, 1, 1, 12)),
       );
 
       final messages = await repository.loadMessages('f');
       expect(messages, hasLength(1));
       expect(messages.single.role, ChatRole.user);
       expect(messages.single.content, 'only turn');
+    });
+
+    test('deletes conversations older than the cutoff with their messages',
+        () async {
+      final old = DateTime(2024, 1, 1, 12);
+      final recent = DateTime(2024, 5, 1, 12);
+      await repository.saveTurn(
+        conversationId: 'old',
+        title: 'Old',
+        message: ChatMessage(role: ChatRole.user, content: 'old', createdAt: old),
+        at: old,
+      );
+      await repository.saveTurn(
+        conversationId: 'recent',
+        title: 'Recent',
+        message: ChatMessage(role: ChatRole.user, content: 'recent', createdAt: recent),
+        at: recent,
+      );
+
+      final deleted = await repository.deleteExpiredBefore(DateTime(2024, 3, 1));
+
+      expect(deleted, 1);
+      final conversations = await database.select(database.conversations).get();
+      expect(conversations.map((c) => c.id).toList(), ['recent']);
+      final messages = await database.select(database.messages).get();
+      expect(messages.map((m) => m.conversationId).toSet(), {'recent'});
+    });
+
+    test('a deletion failure leaves the database readable', () async {
+      final failingDatabase = AppDatabase(NativeDatabase.memory());
+      addTearDown(failingDatabase.close);
+      final failingRepository = ConversationRepository(failingDatabase);
+
+      final old = DateTime(2024, 1, 1, 12);
+      await failingRepository.saveTurn(
+        conversationId: 'old',
+        title: 'Old',
+        message: ChatMessage(role: ChatRole.user, content: 'old', createdAt: old),
+        at: old,
+      );
+
+      await failingDatabase.customStatement(
+        'CREATE TRIGGER block_delete BEFORE DELETE ON conversations '
+        "BEGIN SELECT RAISE(ABORT, 'blocked'); END;",
+      );
+
+      await expectLater(
+        failingRepository.deleteExpiredBefore(DateTime(2024, 3, 1)),
+        throwsA(anything),
+      );
+
+      final conversations = await failingDatabase.select(failingDatabase.conversations).get();
+      expect(conversations.map((c) => c.id).toList(), ['old']);
+      final messages = await failingDatabase.select(failingDatabase.messages).get();
+      expect(messages.map((m) => m.conversationId).toList(), ['old']);
     });
 
     test('a save after close surfaces an exception instead of a silent no-op',
@@ -172,7 +247,7 @@ void main() {
         repository.saveTurn(
           conversationId: 'closed',
           title: 'Closed',
-          message: const ChatMessage(role: ChatRole.user, content: 'hello'),
+          message: ChatMessage(role: ChatRole.user, content: 'hello', createdAt: DateTime(2024, 1, 1, 12)),
         ),
         throwsA(anything),
       );
