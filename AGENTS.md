@@ -68,10 +68,12 @@ Rules:
 5. Close with `/opsx-archive` so `specs/` reflects shipped truth. Specs are the source of truth; if code and spec disagree, that is a bug in one of them.
 6. A new dependency, a new permission, or a new network destination needs the proposal to say why in one sentence.
 7. `openspec validate <change> --strict` is green before a proposal counts as approved, and before it is archived.
+8. A change whose spec deltas touch a capability the acceptance suite covers (`integration_test/accept/`) names the suite scenario to add or update in its tasks, or records why none applies. The suite itself is governed by the `acceptance-testing` spec.
 
 ## Definition of done
 
 - Spec delta updated, tests green, streaming edge cases handled (cancel, mid-stream error, retry, malformed SSE)
+- Acceptance suite green (`scripts/accept.sh`) on the emulator on `<dev-box>` (or `<device>` as fallback); a change that alters covered behavior lands its suite update with it
 - No new permissions, no new network calls beyond what the proposal states
 - Changelog entry (user-facing wording, not commit-speak)
 - A change that touches the network path owes on-device rounds against a live endpoint, recorded in `validation.md` beside the change. A round that gets descoped is named there as debt, and the change that owes it is named with it

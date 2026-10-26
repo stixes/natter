@@ -35,6 +35,9 @@ rules:
     - Every task names the check that closes it, a command or a behaviour
       observed on the device
     - Reference existing patterns before inventing new ones
+    - "A change whose spec delta touches a capability covered by the
+      acceptance suite (`integration_test/accept/`) names the scenario to add
+      or update in its tasks, or records why none applies"
     - "A UI task names the states it implements and how to verify them; a
       visual change owes an on-device look on the emulator on <dev-box>, or on
       <device> as a fallback"
