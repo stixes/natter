@@ -1,5 +1,9 @@
 # Spec Delta
 
+## Purpose
+
+Confirms, in one command on a device, that a build still does what the shipped specs promise, so a release can be gated on evidence rather than on trust.
+
 ## ADDED Requirements
 
 ### Requirement: Acceptance suite release gate
