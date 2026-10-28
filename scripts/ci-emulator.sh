@@ -40,6 +40,14 @@ platform=${ANDROID_PLATFORM:-}
 build_tools=${ANDROID_BUILD_TOOLS:-}
 system_image() { printf 'system-images;android-%s;google_apis;x86_64' "$platform"; }
 
+# avdmanager and the emulator each search for an avd through their own order of
+# $ANDROID_AVD_HOME, $ANDROID_SDK_HOME/avd and $HOME/.android/avd, and the two
+# tools do not reliably agree about which one applies. Pinning the variable makes
+# the question moot, and keeps the avd's disk images out of the workspace, where
+# the evidence upload would otherwise try to ship gigabytes.
+avd_home=${ANDROID_AVD_HOME:-$HOME/.android/avd}
+export ANDROID_AVD_HOME=$avd_home
+
 sdk=${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}
 sdkman="$sdk/cmdline-tools/latest/bin/sdkmanager"
 avdmanager="$sdk/cmdline-tools/latest/bin/avdmanager"
@@ -162,19 +170,30 @@ create_avd() {
   else
     say "creating avd $avd on $(system_image), default hardware profile (${AVD_DEVICE:-pixel_8} is not a known device id in this command-line tools revision)"
   fi
+  mkdir -p "$avd_home"
   printf 'no\n' | "$tool" create avd "${args[@]}" >"$evidence/avd-create.log" 2>&1 || {
     tail -n 25 "$evidence/avd-create.log" >&2
     die "avdmanager could not create the avd (full output in $evidence/avd-create.log)"
   }
-  # The emulator resolves an avd by name through its own search path, which is
-  # not guaranteed to be where avdmanager just wrote it. Catching that here says
-  # "the avd is not where the emulator will look", instead of letting it surface
-  # later as an emulator that refuses to boot.
+  # avdmanager can exit 0 without having written anything the emulator will find,
+  # which surfaces much later as an emulator that refuses to boot. So check the
+  # file landed where the pinned avd home says it should, then ask the emulator
+  # itself what it can see, and keep that answer as evidence.
+  [ -f "$avd_home/$avd.ini" ] || {
+    say "contents of $avd_home:"
+    find "$avd_home" -maxdepth 1 2>&1 | sed 's/^/  /' >&2
+    env | grep -iE '^(ANDROID|HOME)' | sed 's/^/  /' >&2
+    tail -n 25 "$evidence/avd-create.log" >&2
+    die "avdmanager reported success but left no $avd.ini in $avd_home"
+  }
   local bin
   bin=$([ -x "$emulator_bin" ] && printf '%s' "$emulator_bin" || printf 'emulator')
-  "$bin" -list-avds 2>/dev/null | grep -qx "$avd" ||
-    die "the avd $avd was created but the emulator cannot see it (avdmanager output in $evidence/avd-create.log; avd home: ${ANDROID_AVD_HOME:-$HOME/.android/avd})"
-  say "avd $avd visible to the emulator"
+  "$bin" -list-avds >"$evidence/avd-list.log" 2>&1 || true
+  grep -qx "$avd" "$evidence/avd-list.log" || {
+    say "the emulator lists: $(tr '\n' ' ' <"$evidence/avd-list.log")"
+    die "the emulator cannot see the avd $avd (emulator output in $evidence/avd-list.log, avdmanager output in $evidence/avd-create.log, avd home $avd_home)"
+  }
+  say "avd $avd visible to the emulator in $avd_home"
 }
 
 launch_emulator() {

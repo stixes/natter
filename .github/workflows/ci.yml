@@ -115,6 +115,12 @@ jobs:
           scripts/ci-emulator.sh
           echo "device=$(cat "$NATTER_CI_EVIDENCE/device-serial")" >>"$GITHUB_OUTPUT"
 
+      # The gate script calls adb by name, and a runner shell does not carry
+      # platform-tools on PATH. Putting it there keeps the gate script itself
+      # unchanged: it is the release gate, and this build is its guest.
+      - name: Put adb on PATH for the gate
+        run: echo "${ANDROID_HOME:-/usr/local/lib/android/sdk}/platform-tools" >>"$GITHUB_PATH"
+
       # The Android-side version check can only be meaningful once the device
       # stage has installed these packages; checking earlier would manufacture a
       # failure that means nothing.
