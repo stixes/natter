@@ -269,3 +269,10 @@ step list of the run GitHub generated, not by reading the file. Probe branches l
 their history through path checkouts; probe changes should be built from the
 current implementation tip, and any file taken from another branch should be read
 back before it is committed.
+
+A scratch file also reached the published tree: `probe-notes.md`, a note-to-self
+about which probes had run, was swept into an unrelated commit by `git add -A` and
+merged to the default branch. Its content named no host, address or device, so the
+scan never had reason to fire - which is the point of scanning content rather than
+filenames. Removed in the commit that records this. The habit that prevents it is
+staging by path once a scratch file exists anywhere in the tree.
