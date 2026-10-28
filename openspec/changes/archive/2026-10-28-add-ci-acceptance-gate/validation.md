@@ -72,11 +72,11 @@ between runs is wider than the saving, so the step was reverted in
 
 Debt, named: the CI gate has no budget of its own, and each acceptance file costs
 roughly ninety seconds of CI time (about half that on the local emulator). At
-four files the build has 4.5 minutes of slack, and the local gate has about one
-minute inside its own five-minute figure; a fifth and sixth file spend most of
-both. If the gate reaches the nine minute step cap, the options are two accept
-jobs splitting the suite across two devices, a larger runner tier, or fewer
-acceptance files per build cycle. None is in scope here.
+four files the build has 6.5 minutes of slack against the fifteen minute budget,
+and the local gate has about one minute inside its own five-minute figure; a
+fifth and sixth file spend most of both. If the gate reaches its step cap, the
+options are two accept jobs splitting the suite across two devices, a larger
+runner tier, or fewer acceptance files per build cycle. None is in scope here.
 
 ## Declared pins and drift (tasks 2.2, 2.4)
 
@@ -247,7 +247,25 @@ Fix, in the same branch of the monitoring rule as "fixed": `cmake;3.22.1` joins
 the packages provisioning installs, and the step caps are rebalanced to 4 min
 provisioning plus 10 min gate, still summing inside the job's fifteen.
 
-Debt this leaves: whether the rebalanced caps hold is only settled by the runs
-that follow this one, and the ten minute cap is now the item to watch. The
-options if it fires again are the ones named above - two accept jobs across two
+Measured after the fix, on two further runs (`40697156548`, `40698520363` - the
+second in the shipped shape, no cache): both green, gate step **356 s and 352 s**,
+the lowest and tightest pair of the seven accept runs, and accept job walls of
+480 s and 508 s, which leaves 6.5 minutes of slack against the fifteen minute
+budget. Provisioning CMake did not merely remove a timeout risk; it took about
+two minutes off every run and most of the spread with it.
+
+Debt this leaves: the numbers are four acceptance files deep, and the caps are
+still set above a spread measured from six green runs. If the gate reaches its
+step cap again, the options are the ones named above - two accept jobs across two
 devices, a larger runner tier, or fewer acceptance files per build cycle.
+
+### Process noise worth naming
+
+`git checkout <other-branch> -- <path>` copies that branch's whole file rather
+than applying a diff. Copying the workflow off the scratch probe branch
+resurrected the Gradle output cache that had deliberately been reverted three
+commits earlier, and it rode into a real run before being caught - by reading the
+step list of the run GitHub generated, not by reading the file. Probe branches leak
+their history through path checkouts; probe changes should be built from the
+current implementation tip, and any file taken from another branch should be read
+back before it is committed.
