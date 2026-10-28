@@ -135,6 +135,11 @@ install_packages() {
     "platform-tools"
     "emulator"
     "$(system_image)"
+    # Not a device package: the app's native plugins resolve CMake during the
+    # Gradle build, and Gradle then downloads and installs it inside the gate
+    # step, which is a bounded download becoming an unbounded one. One measured
+    # run spent its acceptance budget on exactly that and hit its step cap.
+    "cmake;3.22.1"
   )
   # A bounded stream of confirmations rather than `yes |`: sdkmanager stops
   # reading before its input is exhausted, and `yes` then dies on a broken pipe,

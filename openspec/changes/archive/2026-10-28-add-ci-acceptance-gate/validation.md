@@ -222,3 +222,32 @@ distinct causes: pin-check parsing, an unknown avd hardware profile, `adb` not o
 registration), and scratch probes were run on a separate branch so that this
 branch's verdicts stayed interpretable. No run on this branch was passed over
 while pending or cancelled.
+
+## A red verdict on the archive push, and what it cost (monitoring rule, applied)
+
+Run `40695198395`, commit `47fd2ac` - a commit that moves documents and nothing
+else: `checks` green, `accept` red at `Run acceptance gate`, which hit its nine
+minute step cap at 552 s. The gate output says where the time went:
+
+```text
+Checking the license for package CMake 3.22.1 in /usr/local/lib/android/sdk/licenses
+License for package CMake 3.22.1 accepted.
+"Install CMake 3.22.1 v.3.22.1" complete.
+Running Gradle task 'assembleDebug'...                            144.1s
+##[error]The action 'Run acceptance gate' has timed out after 9 minutes.
+```
+
+The app's native plugins resolve CMake, Gradle finds it missing, and so the
+*gate* step spends its acceptance budget downloading and installing an SDK
+component - a bounded download in the provisioning step becoming an unbounded one
+inside the gate. Across all runs the gate measured 370, 403, 469, 473 and 552 s:
+the spread is real and one run ended inside a cap rather than in a verdict.
+
+Fix, in the same branch of the monitoring rule as "fixed": `cmake;3.22.1` joins
+the packages provisioning installs, and the step caps are rebalanced to 4 min
+provisioning plus 10 min gate, still summing inside the job's fifteen.
+
+Debt this leaves: whether the rebalanced caps hold is only settled by the runs
+that follow this one, and the ten minute cap is now the item to watch. The
+options if it fires again are the ones named above - two accept jobs across two
+devices, a larger runner tier, or fewer acceptance files per build cycle.
