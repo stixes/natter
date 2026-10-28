@@ -89,6 +89,23 @@ jobs:
       - name: Check toolchain pins (declared)
         run: scripts/ci-pins.sh declared
 
+      # The gate pays for a Gradle build once per acceptance file, because
+      # `flutter test integration_test/<dir>` builds an instrumentation target per
+      # file. setup-java's gradle cache holds the dependency cache under ~/.gradle,
+      # but the incremental state that makes the second and later builds cheap lives
+      # in the project build directories, which nothing else caches. The key names
+      # the files whose contents would change a build's inputs, plus the Flutter
+      # version; a miss costs a cold build, never a wrong one.
+      - name: Cache Gradle build outputs
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/app
+            android/.gradle
+            .gradle
+          key: natter-gradle-outputs-${{ runner.os }}-${{ env.FLUTTER_VERSION }}-${{ hashFiles('pubspec.lock', 'pubspec.yaml', '**/android/build.gradle.kts', '**/android/settings.gradle.kts', '**/android/app/build.gradle.kts', '**/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: natter-gradle-outputs-${{ runner.os }}-${{ env.FLUTTER_VERSION }}-
+
       # Hardware acceleration for the emulator is present on hosted Linux
       # runners; the device node needs its permissions opened.
       - name: Enable KVM group permissions
@@ -109,12 +126,13 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
 
-      # Step timeouts sit inside the job's, and the job's sits inside the build
-      # budget in the spec. An overrun then names the stage that overran, rather
-      # than cancelling the job and leaving the reason to inference.
+      # Step timeouts sit inside the job's, and the job's is the build budget the
+      # spec states; the two step caps sum inside it. An overrun then names the
+      # stage that overran rather than cancelling the job and leaving the reason to
+      # inference.
       - name: Provision device
         id: device
-        timeout-minutes: 6
+        timeout-minutes: 5
         run: |
           scripts/ci-emulator.sh
           echo "device=$(cat "$NATTER_CI_EVIDENCE/device-serial")" >>"$GITHUB_OUTPUT"
@@ -135,7 +153,7 @@ jobs:
       # which is a different verdict from a gate that says the build is not
       # releasable.
       - name: Run acceptance gate
-        timeout-minutes: 8
+        timeout-minutes: 9
         env:
           NATTER_ACCEPT_DEVICE: ${{ steps.device.outputs.device }}
         run: |
