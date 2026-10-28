@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -64,18 +66,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           children: [
             ExcludeSemantics(child: NatterMark()),
             SizedBox(width: 8),
-            Flexible(
-              child: Text('Natter', overflow: TextOverflow.ellipsis),
-            ),
+            Flexible(child: Text('Natter', overflow: TextOverflow.ellipsis)),
           ],
         ),
         actions: [
           IconButton(
             tooltip: 'Endpoint',
             icon: const Icon(Icons.settings_outlined),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const SettingsScreen()),
-            ),
+            onPressed:
+                () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                ),
           ),
         ],
       ),
@@ -83,24 +84,28 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         child: Column(
           children: [
             Expanded(
-              child: rowCount == 0
-                  ? _EmptyState(profile: profile)
-                  : ListView.builder(
-                      controller: _scroll,
-                      padding: const EdgeInsets.all(12),
-                      itemCount: rowCount,
-                      itemBuilder: (context, index) {
-                        if (index < messages.length) {
-                          final message = messages[index];
-                          return MessageBubble(
-                            content: message.content,
-                            isMine: message.role == ChatRole.user,
-                            createdAt: message.createdAt,
+              child:
+                  rowCount == 0
+                      ? _EmptyState(profile: profile)
+                      : ListView.builder(
+                        controller: _scroll,
+                        padding: const EdgeInsets.all(12),
+                        itemCount: rowCount,
+                        itemBuilder: (context, index) {
+                          if (index < messages.length) {
+                            final message = messages[index];
+                            return MessageBubble(
+                              content: message.content,
+                              isMine: message.role == ChatRole.user,
+                              createdAt: message.createdAt,
+                            );
+                          }
+                          return _DraftBubble(
+                            draft: draft!,
+                            isStreaming: conversation.isStreaming,
                           );
-                        }
-                        return _DraftBubble(draft: draft!);
-                      },
-                    ),
+                        },
+                      ),
             ),
             if (conversation.error != null)
               _ErrorBanner(
@@ -170,30 +175,30 @@ class _HistoryDrawer extends ConsumerWidget {
             ),
             const Divider(height: 1),
             Expanded(
-              child: unavailable
-                  ? const Center(child: Text('History unavailable.'))
-                  : conversations.when(
-                      data: (items) {
-                        if (items.isEmpty) {
-                          return const Center(
-                            child: Text('No conversations yet.'),
+              child:
+                  unavailable
+                      ? const Center(child: Text('History unavailable.'))
+                      : conversations.when(
+                        data: (items) {
+                          if (items.isEmpty) {
+                            return const Center(
+                              child: Text('No conversations yet.'),
+                            );
+                          }
+                          return _GroupedHistoryList(
+                            groups: groupConversations(items, DateTime.now()),
+                            onOpen: (summary) {
+                              Navigator.of(context).pop();
+                              notifier.openConversation(summary.id);
+                            },
                           );
-                        }
-                        return _GroupedHistoryList(
-                          groups: groupConversations(items, DateTime.now()),
-                          onOpen: (summary) {
-                            Navigator.of(context).pop();
-                            notifier.openConversation(summary.id);
-                          },
-                        );
-                      },
-                      loading: () => const Center(
-                        child: Text('Loading...'),
+                        },
+                        loading: () => const Center(child: Text('Loading...')),
+                        error:
+                            (error, stack) => const Center(
+                              child: Text('History unavailable.'),
+                            ),
                       ),
-                      error: (error, stack) => const Center(
-                        child: Text('History unavailable.'),
-                      ),
-                    ),
             ),
           ],
         ),
@@ -271,11 +276,7 @@ class _EmptyState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.forum_outlined,
-              size: 40,
-              color: theme.disabledColor,
-            ),
+            Icon(Icons.forum_outlined, size: 40, color: theme.disabledColor),
             const SizedBox(height: 12),
             Text(
               profile.isConfigured
@@ -290,22 +291,97 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
-/// The in-flight reply: placeholder while waiting or thinking, streamed plain
-/// text once answer tokens arrive.
-class _DraftBubble extends StatelessWidget {
-  const _DraftBubble({required this.draft});
+/// The in-flight reply: placeholder while waiting or thinking, streamed
+/// markdown once answer tokens arrive.
+///
+/// The live render is coalesced here, not in the stream or the controller: a
+/// fast reply hands over a token every frame, and re-parsing the whole draft on
+/// each one burns frames for no visual gain. The window is leading-edge, so the
+/// first token shows at once, and the text that arrived while a window was open
+/// is shown when it closes - nothing received is ever dropped. A finished reply
+/// shows immediately: the committed bubble below is never throttled.
+class _DraftBubble extends StatefulWidget {
+  const _DraftBubble({required this.draft, required this.isStreaming});
 
   final AssistantDraft draft;
+  final bool isStreaming;
+
+  /// At most one markdown re-render per this interval while a reply streams.
+  static const renderInterval = Duration(milliseconds: 100);
+
+  @override
+  State<_DraftBubble> createState() => _DraftBubbleState();
+}
+
+class _DraftBubbleState extends State<_DraftBubble> {
+  String _shown = '';
+  String? _pending;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _shown = widget.draft.visibleText;
+    // The leading edge is the first token, not the placeholder: opening the
+    // window here would delay the first token by up to an interval.
+    if (widget.isStreaming && _shown.isNotEmpty) _openWindow();
+  }
+
+  @override
+  void didUpdateWidget(covariant _DraftBubble oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final text = widget.draft.visibleText;
+    // The reply ended, or a retry replaced the text: show what is there now.
+    if (!widget.isStreaming || text.length < _shown.length) {
+      _flush(text);
+      return;
+    }
+    if (text == _shown) return;
+    if (_timer == null) {
+      _show(text);
+      _openWindow();
+    } else {
+      _pending = text;
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _timer = null;
+    super.dispose();
+  }
+
+  void _openWindow() {
+    _timer = Timer(_DraftBubble.renderInterval, () {
+      _timer = null;
+      final pending = _pending;
+      _pending = null;
+      if (pending != null && pending != _shown) {
+        _show(pending);
+        _openWindow();
+      }
+    });
+  }
+
+  void _flush(String text) {
+    _timer?.cancel();
+    _timer = null;
+    _pending = null;
+    if (text != _shown) _show(text);
+  }
+
+  void _show(String text) => setState(() => _shown = text);
 
   @override
   Widget build(BuildContext context) {
-    final label = switch (draft.phase) {
+    final label = switch (widget.draft.phase) {
       AssistantPhase.thinking => 'Thinking',
       AssistantPhase.waiting => 'Waiting',
       AssistantPhase.answering => null,
     };
     return MessageBubble(
-      content: draft.visibleText,
+      content: _shown,
       isMine: false,
       placeholderLabel: label,
     );
@@ -355,10 +431,7 @@ class _ErrorBanner extends StatelessWidget {
 /// A storage failure warning: no Retry, because retrying a save would re-send
 /// the conversation. The turn stays visible; the notice only reports.
 class _HistoryNoticeBanner extends StatelessWidget {
-  const _HistoryNoticeBanner({
-    required this.message,
-    required this.onDismiss,
-  });
+  const _HistoryNoticeBanner({required this.message, required this.onDismiss});
 
   final String message;
   final VoidCallback onDismiss;

@@ -396,6 +396,27 @@ List<String> assistantBubbleTexts(WidgetTester tester) => [
 bool hasAssistantBubbleWith(WidgetTester tester, String text) =>
     assistantBubbleTexts(tester).any((content) => content.contains(text));
 
+/// Message bodies as actually drawn, markdown consumed.
+///
+/// A user turn draws as one [SelectableText]; a rendered assistant reply draws
+/// as one selectable block per markdown block, so this reads the text widgets
+/// rather than `MessageBubble.content`. [assistantBubbleTexts] keeps reading
+/// that raw text - a different question, and both are needed: storage whole,
+/// screen formatted. Screen-wide needles should therefore be markup-specific.
+List<String> renderedMessageTexts(WidgetTester tester) => [
+      for (final widget in tester.widgetList(
+        find.byWidgetPredicate((w) => w is RichText || w is SelectableText),
+      ))
+        if (widget is RichText)
+          widget.text.toPlainText()
+        else if (widget is SelectableText)
+          widget.textSpan?.toPlainText() ?? widget.data ?? '',
+    ];
+
+/// True if any rendered text on screen contains [needle].
+bool renderedTextContains(WidgetTester tester, String needle) =>
+    renderedMessageTexts(tester).any((body) => body.contains(needle));
+
 final timePattern = RegExp(r'^\d{2}:\d{2}$');
 
 /// `HH:MM` labels currently rendered (the timestamp affordance).

@@ -2,6 +2,24 @@
 
 Notes here are user-facing, not commit-speak.
 
+## render-markdown-replies
+
+Replies are formatted now, not raw markdown.
+
+- Headings, bold and italic text, lists, task lists, quotes, tables, dividing
+  lines, and fenced code blocks in a reply appear as structure, so no `#`, `**`,
+  or backticks are left on screen. Your own messages still show exactly what you
+  typed.
+- Formatting arrives while the reply streams: a heading becomes a heading part-way
+  through a sentence, and a code block that has not finished opening still shows
+  the text that has arrived.
+- A code block wider than its bubble scrolls sideways with a swipe.
+- Links are drawn as links but do not open yet - a separate change will make
+  them tappable. An image a reply mentions is named by its description and never
+  downloaded.
+- Tables keep their rows and columns, but their widths are still even, so a
+  wide table can break a long word in a narrow column.
+
 ## chat-history-grouping-and-expiry
 
 The history list now reads at a glance, and old chats clean themselves up.

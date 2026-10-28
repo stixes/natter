@@ -45,7 +45,9 @@ void main() {
     expect(find.textContaining('Waiting'), findsNothing);
 
     t.service.emit(0, const [StreamDelta(content: 'lo world')]);
-    await tester.pump();
+    // The live render is coalesced: text that arrives inside a render window
+    // shows when that window closes, so growth is observed a tick later.
+    await tester.pump(const Duration(milliseconds: 120));
     expect(find.text('Hello world'), findsOneWidget);
 
     t.service.end(0);
@@ -54,7 +56,9 @@ void main() {
     expect(find.byType(AnimatedPlaceholder), findsNothing);
   });
 
-  testWidgets('markdown arrives as literal plain text', (tester) async {
+  testWidgets('a streamed reply renders as markdown, not markup', (
+    tester,
+  ) async {
     final t = createTestContainer();
     await t.container.read(profileProvider.notifier).save(testProfile);
     await tester.pumpWidget(_app(t.container));
@@ -66,12 +70,113 @@ void main() {
     t.service.end(0);
     await tester.pump();
 
-    // Plain text: the markdown syntax reaches the screen literally.
-    expect(find.text('# Title\n**bold** and `code`'), findsOneWidget);
+    // The reply bubble renders: markup characters are consumed by the parser.
+    final shown = renderedBlocks(tester, find.byType(MessageBubble)).join('\n');
+    expect(shown, contains('Title'));
+    expect(shown, contains('bold'));
+    expect(shown, contains('code'));
+    expect(shown, isNot(contains('#')));
+    expect(shown, isNot(contains('**')));
+    expect(shown, isNot(contains('`')));
   });
 
-  testWidgets('reasoning switches Waiting to Thinking and is never rendered',
-      (tester) async {
+  testWidgets('a streamed heading is a heading mid-stream, and not markup', (
+    tester,
+  ) async {
+    final t = createTestContainer();
+    await t.container.read(profileProvider.notifier).save(testProfile);
+    await tester.pumpWidget(_app(t.container));
+
+    await _sendMessage(tester, 'plan');
+    t.service.emit(0, const [StreamDelta(content: '# Plan\n\n- first')]);
+    // Leading edge: the first token renders at once, markup and all.
+    await tester.pump();
+    final spans = renderedSpans(tester, find.byType(MessageBubble));
+    final joined = renderedBlocks(
+      tester,
+      find.byType(MessageBubble),
+    ).join('\n');
+    expect(joined, contains('Plan'));
+    expect(joined, isNot(contains('#')));
+    final heading = spans.firstWhere((s) => s.text == 'Plan');
+    final item = spans.firstWhere((s) => s.text == 'first');
+    expect(
+      heading.style!.fontSize!,
+      greaterThan(item.style!.fontSize!),
+      reason: 'a streamed heading must read as a heading',
+    );
+  });
+
+  testWidgets('tokens inside a render window show when it closes, unchanged', (
+    tester,
+  ) async {
+    final t = createTestContainer();
+    await t.container.read(profileProvider.notifier).save(testProfile);
+    await tester.pumpWidget(_app(t.container));
+
+    await _sendMessage(tester, 'plan');
+    t.service.emit(0, const [StreamDelta(content: '# Plan\n\n- first')]);
+    await tester.pump();
+
+    t.service.emit(0, const [StreamDelta(content: '\n- second')]);
+    await tester.pump();
+    // Coalesced: still inside the window, so the text is not re-rendered yet.
+    expect(
+      renderedBlocks(tester, find.byType(MessageBubble)).join('\n'),
+      isNot(contains('second')),
+    );
+
+    await tester.pump(const Duration(milliseconds: 120));
+    final shown = renderedBlocks(tester, find.byType(MessageBubble)).join('\n');
+    expect(shown, contains('first'));
+    expect(shown, contains('second'));
+    expect(shown, isNot(contains('- first')));
+
+    t.service.end(0);
+    await tester.pump();
+    final committed = renderedBlocks(
+      tester,
+      find.byType(MessageBubble),
+    ).join('\n');
+    expect(committed, contains('Plan'));
+    expect(committed, contains('first'));
+    expect(committed, contains('second'));
+  });
+
+  testWidgets('an open code fence mid-stream keeps its text visible', (
+    tester,
+  ) async {
+    final t = createTestContainer();
+    await t.container.read(profileProvider.notifier).save(testProfile);
+    await tester.pumpWidget(_app(t.container));
+
+    await _sendMessage(tester, 'show code');
+    t.service.emit(0, const [
+      StreamDelta(content: 'Here:\n\n```python\nprint("half'),
+    ]);
+    await tester.pump();
+    var shown = renderedBlocks(tester, find.byType(MessageBubble)).join('\n');
+    expect(shown, contains('print("half'));
+    expect(shown, isNot(contains('```')));
+
+    t.service.emit(0, const [StreamDelta(content: '1")\n```')]);
+    await tester.pump(const Duration(milliseconds: 120));
+    shown = renderedBlocks(tester, find.byType(MessageBubble)).join('\n');
+    expect(shown, contains('print("half1")'));
+    expect(shown, isNot(contains('`')));
+    expect(shown, isNot(contains('python')));
+
+    t.service.end(0);
+    await tester.pump();
+    expect(
+      renderedBlocks(tester, find.byType(MessageBubble)).join('\n'),
+      contains('print("half1")'),
+    );
+  });
+
+  testWidgets('reasoning switches Waiting to Thinking and is never rendered', (
+    tester,
+  ) async {
     final t = createTestContainer();
     await t.container.read(profileProvider.notifier).save(testProfile);
     await tester.pumpWidget(_app(t.container));
@@ -94,22 +199,24 @@ void main() {
     expect(find.textContaining('secret reasoning'), findsNothing);
   });
 
-  testWidgets('the placeholder dots animate on a timer while no tokens arrive',
-      (tester) async {
-    final t = createTestContainer();
-    await t.container.read(profileProvider.notifier).save(testProfile);
-    await tester.pumpWidget(_app(t.container));
+  testWidgets(
+    'the placeholder dots animate on a timer while no tokens arrive',
+    (tester) async {
+      final t = createTestContainer();
+      await t.container.read(profileProvider.notifier).save(testProfile);
+      await tester.pumpWidget(_app(t.container));
 
-    await _sendMessage(tester, 'hi');
-    await tester.pump();
+      await _sendMessage(tester, 'hi');
+      await tester.pump();
 
-    expect(find.text('Waiting.'), findsOneWidget);
-    // No tokens arrive at all; the animation is driven by its own timer.
-    await tester.pump(const Duration(milliseconds: 320));
-    expect(find.text('Waiting..'), findsOneWidget);
-    await tester.pump(const Duration(milliseconds: 320));
-    expect(find.text('Waiting...'), findsOneWidget);
-  });
+      expect(find.text('Waiting.'), findsOneWidget);
+      // No tokens arrive at all; the animation is driven by its own timer.
+      await tester.pump(const Duration(milliseconds: 320));
+      expect(find.text('Waiting..'), findsOneWidget);
+      await tester.pump(const Duration(milliseconds: 320));
+      expect(find.text('Waiting...'), findsOneWidget);
+    },
+  );
 
   testWidgets('cancel stops the stream, keeps partial output, and halts the '
       'placeholder timer', (tester) async {
@@ -159,10 +266,11 @@ void main() {
     await tester.tap(find.text('Retry'));
     await tester.pump();
     expect(t.service.requests, hasLength(3));
-    expect(
-      t.service.requests.last.messages.map((m) => m.content).toList(),
-      ['first', 'reply one', 'second'],
-    );
+    expect(t.service.requests.last.messages.map((m) => m.content).toList(), [
+      'first',
+      'reply one',
+      'second',
+    ]);
   });
 
   testWidgets('a timed-out request replaces Waiting with the error banner and '
@@ -187,40 +295,45 @@ void main() {
     await tester.tap(find.text('Retry'));
     await tester.pump();
     expect(t.service.requests, hasLength(2));
-    expect(
-      t.service.requests.last.messages.map((m) => m.content).toList(),
-      ['hi'],
-    );
+    expect(t.service.requests.last.messages.map((m) => m.content).toList(), [
+      'hi',
+    ]);
     expect(find.textContaining('Waiting'), findsOneWidget);
   });
 
-  testWidgets('blank answer with reasoning renders the reasoning as the answer',
-      (tester) async {
-    final t = createTestContainer();
-    await t.container.read(profileProvider.notifier).save(testProfile);
-    await tester.pumpWidget(_app(t.container));
+  testWidgets(
+    'blank answer with reasoning renders the reasoning as the answer',
+    (tester) async {
+      final t = createTestContainer();
+      await t.container.read(profileProvider.notifier).save(testProfile);
+      await tester.pumpWidget(_app(t.container));
 
-    await _sendMessage(tester, 'hi');
-    t.service.emit(0, const [
-      StreamDelta(reasoning: 'the entire answer was reasoning'),
-    ]);
-    t.service.end(0);
-    await tester.pump();
+      await _sendMessage(tester, 'hi');
+      t.service.emit(0, const [
+        StreamDelta(reasoning: 'the entire answer was reasoning'),
+      ]);
+      t.service.end(0);
+      await tester.pump();
 
-    expect(find.text('the entire answer was reasoning'), findsOneWidget);
-    expect(find.textContaining('empty reply'), findsNothing);
-  });
+      expect(find.text('the entire answer was reasoning'), findsOneWidget);
+      expect(find.textContaining('empty reply'), findsNothing);
+    },
+  );
 
-  testWidgets('endpoint config round-trips through the settings screen',
-      (tester) async {
+  testWidgets('endpoint config round-trips through the settings screen', (
+    tester,
+  ) async {
     final t = createTestContainer();
     await tester.pumpWidget(_app(t.container));
 
     await tester.tap(find.byIcon(Icons.settings_outlined));
     await tester.pumpAndSettle();
 
-    expect(find.byType(TextField), findsNWidgets(3),
-        reason: 'settings must expose only base URL, API key, and model');
+    expect(
+      find.byType(TextField),
+      findsNWidgets(3),
+      reason: 'settings must expose only base URL, API key, and model',
+    );
 
     final fields = find.byType(TextField);
     await tester.enterText(fields.at(0), 'http://192.0.2.10:8080/v1');
@@ -230,20 +343,24 @@ void main() {
     await tester.pumpAndSettle();
 
     // Back on the chat screen the profile is live and the key is not echoed.
-    expect(t.container.read(profileProvider), const EndpointProfile(
-      baseUrl: 'http://192.0.2.10:8080/v1',
-      apiKey: 'sk-super-secret',
-      model: 'qwen3-14b',
-    ));
+    expect(
+      t.container.read(profileProvider),
+      const EndpointProfile(
+        baseUrl: 'http://192.0.2.10:8080/v1',
+        apiKey: 'sk-super-secret',
+        model: 'qwen3-14b',
+      ),
+    );
     expect(find.text('sk-super-secret'), findsNothing);
 
     // Reopening the screen shows the stored values again.
     await tester.tap(find.byIcon(Icons.settings_outlined));
     await tester.pumpAndSettle();
-    final reopened = tester
-        .widgetList<TextField>(find.byType(TextField))
-        .map((f) => f.controller!.text)
-        .toList();
+    final reopened =
+        tester
+            .widgetList<TextField>(find.byType(TextField))
+            .map((f) => f.controller!.text)
+            .toList();
     expect(reopened, [
       'http://192.0.2.10:8080/v1',
       'sk-super-secret',
@@ -251,8 +368,9 @@ void main() {
     ]);
   });
 
-  testWidgets('the key reaches secure storage only, never plain settings',
-      (tester) async {
+  testWidgets('the key reaches secure storage only, never plain settings', (
+    tester,
+  ) async {
     final t = createTestContainer();
     await tester.pumpWidget(_app(t.container));
 
@@ -272,7 +390,9 @@ void main() {
     expect(plain['endpoint.model'], 'some-model');
     expect(secure['endpoint.apiKey'], 'sk-plain-text-never-store-me');
     expect(
-      plain.values.any((value) => value.contains('sk-plain-text-never-store-me')),
+      plain.values.any(
+        (value) => value.contains('sk-plain-text-never-store-me'),
+      ),
       isFalse,
       reason: 'the key must not appear in any plain settings value',
     );
@@ -283,8 +403,9 @@ void main() {
     );
   });
 
-  testWidgets('the send button is disabled until an endpoint is configured',
-      (tester) async {
+  testWidgets('the send button is disabled until an endpoint is configured', (
+    tester,
+  ) async {
     final t = createTestContainer();
     await tester.pumpWidget(_app(t.container));
 
@@ -296,21 +417,28 @@ void main() {
     );
     expect(button.onPressed, isNull);
     expect(
-      find.text('No endpoint configured. Open Settings to set a base URL '
-          'and model.'),
+      find.text(
+        'No endpoint configured. Open Settings to set a base URL '
+        'and model.',
+      ),
       findsOneWidget,
     );
   });
 
-  testWidgets('a base URL and model with no key is enough to send',
-      (tester) async {
+  testWidgets('a base URL and model with no key is enough to send', (
+    tester,
+  ) async {
     // The proposal's own use case is a live llama.cpp server, which needs no
     // key at all: demanding one would lock local endpoints out of the app.
     final t = createTestContainer();
-    await t.container.read(profileProvider.notifier).save(const EndpointProfile(
-          baseUrl: 'http://192.0.2.10:8080/v1',
-          model: 'qwen3-14b',
-        ));
+    await t.container
+        .read(profileProvider.notifier)
+        .save(
+          const EndpointProfile(
+            baseUrl: 'http://192.0.2.10:8080/v1',
+            model: 'qwen3-14b',
+          ),
+        );
     await tester.pumpWidget(_app(t.container));
 
     final button = tester.widget<IconButton>(
@@ -319,15 +447,24 @@ void main() {
         matching: find.byType(IconButton),
       ),
     );
-    expect(button.onPressed, isNotNull,
-        reason: 'Send must work for an endpoint that needs no key');
+    expect(
+      button.onPressed,
+      isNotNull,
+      reason: 'Send must work for an endpoint that needs no key',
+    );
     expect(find.textContaining('No endpoint configured'), findsNothing);
 
     await _sendMessage(tester, 'hi');
-    expect(t.service.requests, hasLength(1),
-        reason: 'and the request must go out');
-    expect(t.service.requests.single.profile.apiKey, '',
-        reason: 'an empty key must stay empty rather than be invented');
+    expect(
+      t.service.requests,
+      hasLength(1),
+      reason: 'and the request must go out',
+    );
+    expect(
+      t.service.requests.single.profile.apiKey,
+      '',
+      reason: 'an empty key must stay empty rather than be invented',
+    );
   });
 
   group('history drawer', () {
@@ -356,8 +493,11 @@ void main() {
 
       final newest = tester.getTopLeft(find.text('Newest conversation')).dy;
       final older = tester.getTopLeft(find.text('Older conversation')).dy;
-      expect(newest, lessThan(older),
-          reason: 'the most recently updated conversation is listed first');
+      expect(
+        newest,
+        lessThan(older),
+        reason: 'the most recently updated conversation is listed first',
+      );
     });
 
     testWidgets('groups conversations under recency headers', (tester) async {
@@ -365,19 +505,25 @@ void main() {
       final repository = FakeConversationRepository(
         conversations: [
           ConversationSummary(
-              id: 'today', title: 'Chat from today', updatedAt: now),
+            id: 'today',
+            title: 'Chat from today',
+            updatedAt: now,
+          ),
           ConversationSummary(
-              id: 'yday',
-              title: 'Chat from yesterday',
-              updatedAt: now.subtract(const Duration(days: 1))),
+            id: 'yday',
+            title: 'Chat from yesterday',
+            updatedAt: now.subtract(const Duration(days: 1)),
+          ),
           ConversationSummary(
-              id: 'midweek',
-              title: 'Chat from earlier',
-              updatedAt: now.subtract(const Duration(days: 2))),
+            id: 'midweek',
+            title: 'Chat from earlier',
+            updatedAt: now.subtract(const Duration(days: 2)),
+          ),
           ConversationSummary(
-              id: 'ancient',
-              title: 'Chat from long ago',
-              updatedAt: now.subtract(const Duration(days: 60))),
+            id: 'ancient',
+            title: 'Chat from long ago',
+            updatedAt: now.subtract(const Duration(days: 60)),
+          ),
         ],
       );
       final t = createTestContainer(repository: repository);
@@ -407,10 +553,16 @@ void main() {
       final yesterdayItemY =
           tester.getTopLeft(find.text('Chat from yesterday')).dy;
       final olderHeaderY = tester.getTopLeft(find.text('Older')).dy;
-      expect(todayHeaderY, lessThan(todayItemY),
-          reason: 'the Today header sits above its conversations');
-      expect(todayItemY, lessThan(yesterdayHeaderY),
-          reason: 'sections run most recent first');
+      expect(
+        todayHeaderY,
+        lessThan(todayItemY),
+        reason: 'the Today header sits above its conversations',
+      );
+      expect(
+        todayItemY,
+        lessThan(yesterdayHeaderY),
+        reason: 'sections run most recent first',
+      );
       expect(yesterdayHeaderY, lessThan(yesterdayItemY));
       expect(yesterdayItemY, lessThan(olderHeaderY));
     });
@@ -435,16 +587,20 @@ void main() {
       final headers = find.byWidgetPredicate(
         (widget) => widget is Semantics && widget.properties.header == true,
       );
-      expect(headers, findsWidgets,
-          reason: 'screen readers must be able to find section headers');
+      expect(
+        headers,
+        findsWidgets,
+        reason: 'screen readers must be able to find section headers',
+      );
       expect(
         find.descendant(of: headers, matching: find.text('Today')),
         findsOneWidget,
       );
     });
 
-    testWidgets('the drawer shows Loading... until the first list arrives',
-        (tester) async {
+    testWidgets('the drawer shows Loading... until the first list arrives', (
+      tester,
+    ) async {
       final repository = _SlowConversationRepository(
         conversations: [
           ConversationSummary(
@@ -479,8 +635,9 @@ void main() {
       expect(find.text('No conversations yet.'), findsOneWidget);
     });
 
-    testWidgets('New chat keeps earlier conversations in the drawer',
-        (tester) async {
+    testWidgets('New chat keeps earlier conversations in the drawer', (
+      tester,
+    ) async {
       final t = createTestContainer();
       await t.container.read(profileProvider.notifier).save(testProfile);
       await tester.pumpWidget(_app(t.container));
@@ -502,8 +659,11 @@ void main() {
 
       await tester.tap(find.text('New chat'));
       await tester.pumpAndSettle();
-      expect(find.text('New chat'), findsNothing,
-          reason: 'the drawer closes after New chat');
+      expect(
+        find.text('New chat'),
+        findsNothing,
+        reason: 'the drawer closes after New chat',
+      );
 
       await tester.tap(find.byTooltip('Open navigation menu'));
       await tester.pumpAndSettle();
@@ -517,8 +677,7 @@ void main() {
       );
     });
 
-    testWidgets('selecting a conversation loads its messages',
-        (tester) async {
+    testWidgets('selecting a conversation loads its messages', (tester) async {
       final repository = FakeConversationRepository(
         conversations: [
           ConversationSummary(
@@ -558,14 +717,18 @@ void main() {
 
       expect(find.text('target question'), findsOneWidget);
       expect(find.text('target answer'), findsOneWidget);
-      expect(find.text('New chat'), findsNothing,
-          reason: 'selecting a conversation closes the drawer');
+      expect(
+        find.text('New chat'),
+        findsNothing,
+        reason: 'selecting a conversation closes the drawer',
+      );
     });
   });
 
   group('restored conversation', () {
-    testWidgets('restores a saved conversation with its turns in order',
-        (tester) async {
+    testWidgets('restores a saved conversation with its turns in order', (
+      tester,
+    ) async {
       final repository = FakeConversationRepository(
         conversations: [
           ConversationSummary(
@@ -614,8 +777,9 @@ void main() {
       expect(third < fourth, isTrue);
     });
 
-    testWidgets('a long restored conversation opens scrolled to the bottom',
-        (tester) async {
+    testWidgets('a long restored conversation opens scrolled to the bottom', (
+      tester,
+    ) async {
       final repository = FakeConversationRepository(
         conversations: [
           ConversationSummary(
@@ -643,17 +807,20 @@ void main() {
       await tester.pump();
 
       expect(find.text('message 11'), findsOneWidget);
-      final position = tester
-          .state<ScrollableState>(find.byType(Scrollable).first)
-          .position;
-      expect(position.pixels, position.maxScrollExtent,
-          reason: 'the restored list opens at its newest turn');
+      final position =
+          tester.state<ScrollableState>(find.byType(Scrollable).first).position;
+      expect(
+        position.pixels,
+        position.maxScrollExtent,
+        reason: 'the restored list opens at its newest turn',
+      );
     });
   });
 
   group('history failures', () {
-    testWidgets('a save failure warns without Retry and keeps the turn',
-        (tester) async {
+    testWidgets('a save failure warns without Retry and keeps the turn', (
+      tester,
+    ) async {
       final t = createTestContainer();
       await t.container.read(profileProvider.notifier).save(testProfile);
       t.repository.saveError = Exception('disk full');
@@ -662,12 +829,17 @@ void main() {
       await tester.pump();
       await tester.pump();
 
-      expect(find.text('keep me'), findsOneWidget,
-          reason: 'the user turn stays visible despite the failed save');
-      expect(find.text('This turn was not saved to history.'),
-          findsOneWidget);
-      expect(find.text('Retry'), findsNothing,
-          reason: 'retrying a storage failure would re-send the conversation');
+      expect(
+        find.text('keep me'),
+        findsOneWidget,
+        reason: 'the user turn stays visible despite the failed save',
+      );
+      expect(find.text('This turn was not saved to history.'), findsOneWidget);
+      expect(
+        find.text('Retry'),
+        findsNothing,
+        reason: 'retrying a storage failure would re-send the conversation',
+      );
 
       await tester.tap(find.byIcon(Icons.close));
       await tester.pump();
@@ -686,8 +858,9 @@ void main() {
       expect(find.text('Retry'), findsNothing);
     });
 
-    testWidgets('the drawer shows History unavailable when the list errors',
-        (tester) async {
+    testWidgets('the drawer shows History unavailable when the list errors', (
+      tester,
+    ) async {
       final t = createTestContainer();
       await t.container.read(profileProvider.notifier).save(testProfile);
       t.repository.watchError = Exception('db closed');

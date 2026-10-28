@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:natter/data/chat_completions_client.dart';
@@ -75,12 +76,12 @@ class FakeConversationRepository implements ConversationRepository {
     List<ConversationSummary>? conversations,
     Map<String, List<ChatMessage>>? messagesByConversation,
     List<ChatMessage>? messages,
-  })  : _conversations = List.of(conversations ?? const []),
-        _messagesByConversation = {
-          for (final entry in (messagesByConversation ?? const {}).entries)
-            entry.key: List.of(entry.value),
-        },
-        _messages = List.of(messages ?? const []);
+  }) : _conversations = List.of(conversations ?? const []),
+       _messagesByConversation = {
+         for (final entry in (messagesByConversation ?? const {}).entries)
+           entry.key: List.of(entry.value),
+       },
+       _messages = List.of(messages ?? const []);
 
   final List<ConversationSummary> _conversations;
   final Map<String, List<ChatMessage>> _messagesByConversation;
@@ -92,11 +93,10 @@ class FakeConversationRepository implements ConversationRepository {
   final _watches = StreamController<List<ConversationSummary>>.broadcast();
 
   List<ConversationSummary> get _ordered {
-    final ordered = List.of(_conversations)
-      ..sort((a, b) {
-        final byUpdated = b.updatedAt.compareTo(a.updatedAt);
-        return byUpdated != 0 ? byUpdated : b.id.compareTo(a.id);
-      });
+    final ordered = List.of(_conversations)..sort((a, b) {
+      final byUpdated = b.updatedAt.compareTo(a.updatedAt);
+      return byUpdated != 0 ? byUpdated : b.id.compareTo(a.id);
+    });
     return ordered;
   }
 
@@ -177,8 +177,14 @@ const testProfile = EndpointProfile(
 );
 
 /// A container wired for tests: scripted stream plus inspectable stores.
-({ProviderContainer container, ScriptedChatService service, KeyValueStore settings, KeyValueStore secrets, FakeConversationRepository repository})
-    createTestContainer({FakeConversationRepository? repository}) {
+({
+  ProviderContainer container,
+  ScriptedChatService service,
+  KeyValueStore settings,
+  KeyValueStore secrets,
+  FakeConversationRepository repository,
+})
+createTestContainer({FakeConversationRepository? repository}) {
   final service = ScriptedChatService();
   final settings = InMemoryKeyValueStore();
   final secrets = InMemoryKeyValueStore();
@@ -208,3 +214,64 @@ const testProfile = EndpointProfile(
 /// Lets a test wait for the microtask/stream delivery that follows a manual
 /// emit, without a real timer.
 Future<void> settle() => Future<void>.delayed(Duration.zero);
+
+/// A piece of text a widget tree actually painted, with the style that applied
+/// to it.
+class RenderedSpan {
+  RenderedSpan(this.text, this.style);
+
+  final String text;
+  final TextStyle? style;
+
+  @override
+  String toString() => text;
+}
+
+/// Every text span rendered under [of], in tree order, each carrying the merged
+/// style that applies to it.
+///
+/// This reads through plain text, [SelectableText], and markdown blocks alike,
+/// so a test can assert what a bubble displays and how it looks, rather than
+/// which widget class produced it.
+List<RenderedSpan> renderedSpans(WidgetTester tester, Finder of) {
+  final spans = <RenderedSpan>[];
+  for (final widget in tester.widgetList(
+    find.descendant(
+      of: of,
+      matching: find.byWidgetPredicate(
+        (w) => w is RichText || w is SelectableText,
+      ),
+    ),
+  )) {
+    final InlineSpan root;
+    if (widget is RichText) {
+      root = widget.text;
+    } else {
+      final selectable = widget as SelectableText;
+      root = selectable.textSpan ?? TextSpan(text: selectable.data);
+    }
+    // Walks TextSpan.children directly: InlineSpan.visitChildren visits the
+    // span it is called on, which would recurse forever here.
+    void visit(InlineSpan span, TextStyle? inherited) {
+      if (span is! TextSpan) return;
+      final style =
+          inherited == null ? span.style : inherited.merge(span.style);
+      final text = span.text;
+      if (text != null && text.isNotEmpty) spans.add(RenderedSpan(text, style));
+      for (final child in span.children ?? const <InlineSpan>[]) {
+        visit(child, style);
+      }
+    }
+
+    visit(root, null);
+  }
+  return spans;
+}
+
+/// The plain text of every text widget rendered under [of], block by block.
+///
+/// Markdown markup characters never appear here: the parser consumes them, so
+/// their absence is what "rendered" means.
+List<String> renderedBlocks(WidgetTester tester, Finder of) => [
+  for (final span in renderedSpans(tester, of)) span.text,
+];

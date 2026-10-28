@@ -44,6 +44,11 @@ dependencies:
   # drift 2.29.0 (0.2.8 requires ^2.30.0).
   drift: 2.29.0
   drift_flutter: 0.2.7
+  # Exact pin: the maintained community successor to Google's discontinued
+  # flutter_markdown (pure Dart, no platform channel). 1.0.8+ require
+  # markdown ^7.3.1, which needs Dart ^3.9.0; 1.0.7 asks for markdown ^7.3.0
+  # and stays on the dev image's Flutter 3.29.3 / Dart 3.7.2.
+  flutter_markdown_plus: 1.0.7
 
 dev_dependencies:
   flutter_test:
