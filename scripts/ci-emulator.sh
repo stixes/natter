@@ -45,6 +45,17 @@ sdkman="$sdk/cmdline-tools/latest/bin/sdkmanager"
 avdmanager="$sdk/cmdline-tools/latest/bin/avdmanager"
 emulator_bin="$sdk/emulator/emulator"
 
+# adb is not reliably on PATH in a CI runner shell even when the SDK is present,
+# and every device interaction after provisioning goes through it.
+resolve_adb() {
+  if [ -x "$sdk/platform-tools/adb" ]; then
+    printf '%s' "$sdk/platform-tools/adb"
+  elif command -v adb >/dev/null 2>&1; then
+    printf 'adb'
+  fi
+}
+adb_bin=$(resolve_adb)
+
 logcat_pid_file=$evidence/logcat.pid
 emulator_pid_file=$evidence/emulator.pid
 cleaned_up=no
@@ -60,7 +71,9 @@ stop_emulator() {
   if [ -f "$emulator_pid_file" ]; then
     local pid
     pid=$(cat "$emulator_pid_file")
-    adb -s "$(cat "$evidence/device-serial" 2>/dev/null || true)" emu kill >/dev/null 2>&1 || true
+    if [ -n "$adb_bin" ]; then
+      "$adb_bin" -s "$(cat "$evidence/device-serial" 2>/dev/null || true)" emu kill >/dev/null 2>&1 || true
+    fi
     kill "$pid" 2>/dev/null || true
     for _ in 1 2 3 4 5; do
       kill -0 "$pid" 2>/dev/null || break
@@ -96,6 +109,7 @@ preflight() {
   [ -r /dev/kvm ] && [ -w /dev/kvm ] || die "/dev/kvm exists but is not readable and writable; open its permissions before provisioning (on a GitHub-hosted runner the workflow does this with a udev rule)"
   [ -n "$platform" ] && [ -n "$build_tools" ] || die "ANDROID_PLATFORM and ANDROID_BUILD_TOOLS must be set (they come from the workflow env block)"
   [ -x "$sdkman" ] || command -v sdkmanager >/dev/null 2>&1 || die "no sdkmanager under $sdk; the runner image is expected to carry the Android SDK"
+  [ -n "$adb_bin" ] || die "no adb under $sdk/platform-tools and none on PATH; the device stage cannot talk to a device without it"
 }
 
 install_packages() {
@@ -113,7 +127,12 @@ install_packages() {
   # which leaves a confusing line in the log for a step that succeeded.
   printf 'y\n%.0s' $(seq 1 60) | "$manager" --licenses >/dev/null 2>&1 || true
   say "installing: ${packages[*]}"
-  "$manager" --install "${packages[@]}" >/dev/null
+  # A log file rather than the step's own output: an install that half-succeeds
+  # is diagnosable only from what sdkmanager actually said.
+  "$manager" --install "${packages[@]}" >"$evidence/sdk-install.log" 2>&1 || {
+    tail -n 25 "$evidence/sdk-install.log" >&2
+    die "the Android SDK packages above could not be installed (full output in $evidence/sdk-install.log)"
+  }
 }
 
 device_profile() {
@@ -143,7 +162,19 @@ create_avd() {
   else
     say "creating avd $avd on $(system_image), default hardware profile (${AVD_DEVICE:-pixel_8} is not a known device id in this command-line tools revision)"
   fi
-  printf 'no\n' | "$tool" create avd "${args[@]}" >/dev/null
+  printf 'no\n' | "$tool" create avd "${args[@]}" >"$evidence/avd-create.log" 2>&1 || {
+    tail -n 25 "$evidence/avd-create.log" >&2
+    die "avdmanager could not create the avd (full output in $evidence/avd-create.log)"
+  }
+  # The emulator resolves an avd by name through its own search path, which is
+  # not guaranteed to be where avdmanager just wrote it. Catching that here says
+  # "the avd is not where the emulator will look", instead of letting it surface
+  # later as an emulator that refuses to boot.
+  local bin
+  bin=$([ -x "$emulator_bin" ] && printf '%s' "$emulator_bin" || printf 'emulator')
+  "$bin" -list-avds 2>/dev/null | grep -qx "$avd" ||
+    die "the avd $avd was created but the emulator cannot see it (avdmanager output in $evidence/avd-create.log; avd home: ${ANDROID_AVD_HOME:-$HOME/.android/avd})"
+  say "avd $avd visible to the emulator"
 }
 
 launch_emulator() {
@@ -160,7 +191,7 @@ launch_emulator() {
 
 resolve_serial() {
   local serial
-  serial=$(adb devices | awk 'NR > 1 && $2 == "device" { print $1; exit }')
+  serial=$("$adb_bin" devices | awk 'NR > 1 && $2 == "device" { print $1; exit }')
   [ -n "$serial" ] || die "no emulator device appeared in adb devices"
   printf '%s\n' "$serial" >"$evidence/device-serial"
   say "device serial $serial"
@@ -173,11 +204,11 @@ wait_for_boot() {
   say "waiting for boot (limit ${boot_timeout}s)"
   while [ "$SECONDS" -lt "$deadline" ]; do
     local completed
-    completed=$(adb -s "$serial" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)
+    completed=$("$adb_bin" -s "$serial" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)
     if [ "$completed" = "1" ]; then
-      adb -s "$serial" shell settings put global window_animation_scale 0 >/dev/null 2>&1 || true
-      adb -s "$serial" shell settings put global transition_animation_scale 0 >/dev/null 2>&1 || true
-      adb -s "$serial" shell settings put global animator_duration_scale 0 >/dev/null 2>&1 || true
+      "$adb_bin" -s "$serial" shell settings put global window_animation_scale 0 >/dev/null 2>&1 || true
+      "$adb_bin" -s "$serial" shell settings put global transition_animation_scale 0 >/dev/null 2>&1 || true
+      "$adb_bin" -s "$serial" shell settings put global animator_duration_scale 0 >/dev/null 2>&1 || true
       say "booted in ${SECONDS}s"
       return 0
     fi
@@ -189,7 +220,7 @@ wait_for_boot() {
 capture_logcat() {
   local serial
   serial=$(cat "$evidence/device-serial")
-  adb -s "$serial" logcat -v time >"$evidence/logcat.txt" 2>&1 &
+  "$adb_bin" -s "$serial" logcat -v time >"$evidence/logcat.txt" 2>&1 &
   echo $! >"$logcat_pid_file"
 }
 
