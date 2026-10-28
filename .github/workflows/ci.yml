@@ -89,23 +89,6 @@ jobs:
       - name: Check toolchain pins (declared)
         run: scripts/ci-pins.sh declared
 
-      # The gate pays for a Gradle build once per acceptance file, because
-      # `flutter test integration_test/<dir>` builds an instrumentation target per
-      # file. setup-java's gradle cache holds the dependency cache under ~/.gradle,
-      # but the incremental state that makes the second and later builds cheap lives
-      # in the project build directories, which nothing else caches. The key names
-      # the files whose contents would change a build's inputs, plus the Flutter
-      # version; a miss costs a cold build, never a wrong one.
-      - name: Cache Gradle build outputs
-        uses: actions/cache@v4
-        with:
-          path: |
-            build/app
-            android/.gradle
-            .gradle
-          key: natter-gradle-outputs-${{ runner.os }}-${{ env.FLUTTER_VERSION }}-${{ hashFiles('pubspec.lock', 'pubspec.yaml', '**/android/build.gradle.kts', '**/android/settings.gradle.kts', '**/android/app/build.gradle.kts', '**/gradle/wrapper/gradle-wrapper.properties') }}
-          restore-keys: natter-gradle-outputs-${{ runner.os }}-${{ env.FLUTTER_VERSION }}-
-
       # Hardware acceleration for the emulator is present on hosted Linux
       # runners; the device node needs its permissions opened.
       - name: Enable KVM group permissions
