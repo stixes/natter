@@ -108,19 +108,42 @@ install_packages() {
     "emulator"
     "$(system_image)"
   )
-  # Deliberately not piped under pipefail: sdkmanager stops reading before `yes`
-  # is done, which turns a successful license acceptance into exit 141.
-  yes | "$manager" --licenses >/dev/null 2>&1 || true
+  # A bounded stream of confirmations rather than `yes |`: sdkmanager stops
+  # reading before its input is exhausted, and `yes` then dies on a broken pipe,
+  # which leaves a confusing line in the log for a step that succeeded.
+  printf 'y\n%.0s' $(seq 1 60) | "$manager" --licenses >/dev/null 2>&1 || true
   say "installing: ${packages[*]}"
   "$manager" --install "${packages[@]}" >/dev/null
 }
 
+device_profile() {
+  # A named hardware profile is nicer, but the id list moves between
+  # command-line tool revisions, and an unsupported --device is a hard failure
+  # in a stage that otherwise works. So: take the first profile this revision
+  # knows about, newest first, and let avdmanager use its default profile if
+  # none of them are known. avdmanager prints ids as `id: 17 or "pixel"`.
+  local tool=$1 want
+  for want in ${AVD_DEVICE:-pixel_8 pixel_6 pixel}; do
+    if "$tool" list device 2>/dev/null | grep -qF "or \"$want\""; then
+      printf '%s' "$want"
+      return 0
+    fi
+  done
+}
+
 create_avd() {
   [ -x "$avdmanager" ] || command -v avdmanager >/dev/null 2>&1 || die "no avdmanager under $sdk"
-  local tool
+  local tool profile args
   tool=$([ -x "$avdmanager" ] && printf '%s' "$avdmanager" || printf 'avdmanager')
-  say "creating avd $avd on $(system_image)"
-  printf 'no\n' | "$tool" create avd --name "$avd" --package "$(system_image)" --device pixel_8 --force >/dev/null
+  profile=$(device_profile "$tool")
+  args=(--name "$avd" --package "$(system_image)" --force)
+  if [ -n "$profile" ]; then
+    say "creating avd $avd on $(system_image), device $profile"
+    args+=(--device "$profile")
+  else
+    say "creating avd $avd on $(system_image), default hardware profile (${AVD_DEVICE:-pixel_8} is not a known device id in this command-line tools revision)"
+  fi
+  printf 'no\n' | "$tool" create avd "${args[@]}" >/dev/null
 }
 
 launch_emulator() {
