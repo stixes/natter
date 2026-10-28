@@ -43,6 +43,7 @@ adb_timeout=${NATTER_ADB_TIMEOUT:-240}
 
 platform=${ANDROID_PLATFORM:-}
 build_tools=${ANDROID_BUILD_TOOLS:-}
+# The install assertion below repeats this path, so the two move together.
 system_image() { printf 'system-images;android-%s;google_apis;x86_64' "$platform"; }
 
 # avdmanager and the emulator each search for an avd through their own order of
@@ -145,6 +146,14 @@ install_packages() {
   "$manager" --install "${packages[@]}" >"$evidence/sdk-install.log" 2>&1 || {
     tail -n 25 "$evidence/sdk-install.log" >&2
     die "the Android SDK packages above could not be installed (full output in $evidence/sdk-install.log)"
+  }
+  # sdkmanager can exit successfully while having quietly skipped an id it could
+  # not resolve. Asserting the system image is on disk names the missing package
+  # here, rather than several steps later as an avd that will not boot.
+  local installed="$sdk/system-images/android-$platform/google_apis/x86_64"
+  [ -d "$installed" ] || {
+    grep -iE 'undefined|not found|error|warning' "$evidence/sdk-install.log" | tail -n 5 >&2
+    die "the declared system image is not installed: $(system_image) (install output in $evidence/sdk-install.log)"
   }
 }
 
