@@ -21,17 +21,6 @@ The app SHALL provide a minimal configuration screen where the user sets one bas
 - **WHEN** the app stores the configured API key
 - **THEN** the key resides only in secure storage and does not appear in logs or conversation records
 
-### Requirement: Streaming chat screen
-The chat screen SHALL send the conversation to the configured endpoint as an OpenAI-compatible `chat/completions` request with streaming enabled and SHALL render the assistant reply incrementally as tokens arrive. The reply SHALL be rendered as plain text.
-
-#### Scenario: Reply streams token by token
-- **WHEN** the endpoint returns streamed completion chunks
-- **THEN** the assistant message grows incrementally on screen rather than appearing only after the stream ends
-
-#### Scenario: Answer shown as plain text
-- **WHEN** an assistant answer contains markdown syntax
-- **THEN** it is displayed as literal text without markdown rendering
-
 ### Requirement: Assistant placeholder states
 While an assistant reply is not yet producing visible answer text, the app SHALL show an animated placeholder. The placeholder label SHALL be `Waiting` before the first answer or reasoning token arrives and SHALL change to `Thinking` while a reasoning stream is active and no answer text has begun. A role-only or empty delta MUST NOT end the waiting state.
 
@@ -141,3 +130,13 @@ reside only in secure, keystore-backed storage.
   or model
 - **THEN** the endpoint counts as unconfigured until the user saves a base URL and model,
   after which both persist across later restarts
+
+### Requirement: Streaming reply delivery
+The chat screen SHALL send the conversation to the configured endpoint as an
+OpenAI-compatible `chat/completions` request with streaming enabled, and SHALL
+show the assistant reply growing as tokens arrive. How the reply is presented is
+defined by the `reply-rendering` capability, not here.
+
+#### Scenario: Reply streams token by token
+- **WHEN** the endpoint returns streamed completion chunks
+- **THEN** the assistant message grows incrementally on screen rather than appearing only after the stream ends
