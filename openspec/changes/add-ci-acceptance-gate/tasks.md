@@ -100,8 +100,9 @@
 - [x] 4.2 Confirm the acceptance gate keeps its own sub-five-minute budget on the
       CI device as well as on the emulator on `<dev-box>`. Verify: the recorded
       `Run acceptance gate` duration is under five minutes.
-      Not confirmed on CI: the gate costs 370-492 s there, against the 162 s the
-      same command takes on the emulator on `<dev-box>`. The shipped five-minute
+      Not confirmed on CI: the gate costs 370-492 s there, against 228 s for the
+      same command on the emulator on `<dev-box>` measured in this pass (162 s
+      in the older acceptance-suite record, on a warmer Gradle environment). The shipped five-minute
       scenario is scoped to "the default emulator target", so no requirement is
       violated; the cost, its cause (a build, install and launch cycle per
       acceptance file on a device new every run), an attempted Gradle-output

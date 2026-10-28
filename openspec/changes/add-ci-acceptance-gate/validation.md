@@ -11,7 +11,8 @@ Local (dev container, Flutter 3.29.3 / Dart 3.7.2): `flutter analyze` clean,
 passing in all three modes, `scripts/ci-emulator.sh` refusing to start with
 `Provision device: no /dev/kvm on this machine` and installing nothing, and
 `scripts/ci-emulator.sh teardown` plus a bogus mode returning the expected exit
-codes.
+codes. The acceptance gate itself was re-run locally on the emulator on
+`<dev-box>`: exit 0, twelve scenarios, 3 m 48 s wall from a clean app state.
 
 ## Green builds
 
@@ -47,12 +48,14 @@ minutes of headroom at worst. The stages are: about two minutes of toolchain and
 pin checks, about ninety seconds of device provisioning, and then the gate.
 
 **The gate does not fit five minutes on a CI device.** It costs 370-492 s here,
-against 162 s (2 m 42 s) recorded for the same command on the emulator on
-`<dev-box>` in `archive/2026-10-27-add-acceptance-suite/validation.md`. That is
-not a violation of the shipped requirement: the five-minute scenario in
-`specs/acceptance-testing/spec.md` is scoped to "the default emulator target",
-and a throwaway runner device is not that target. It is a cost of this build, and
-the stage that carries it is `Run acceptance gate`.
+against 228 s (3 m 48 s) measured for the same command on the emulator on
+`<dev-box>` during this verification pass - and 162 s in
+`archive/2026-10-27-add-acceptance-suite/validation.md`, which was a warmer
+Gradle environment than today's. That spread is not a violation of the shipped
+requirement: the five-minute scenario in `specs/acceptance-testing/spec.md` is
+scoped to "the default emulator target", and a throwaway runner device is not
+that target. It is a cost of this build, and the stage that carries it is
+`Run acceptance gate`.
 
 Where that time goes: `scripts/accept.sh` runs
 `flutter test integration_test/accept -d <device>` once over the directory, and
@@ -68,11 +71,12 @@ between runs is wider than the saving, so the step was reverted in
 `0e45cc0` rather than left in place.
 
 Debt, named: the CI gate has no budget of its own, and each acceptance file costs
-roughly ninety seconds of CI time. At four files the build has 4.5 minutes of
-slack; a fifth and sixth file spend most of it. If the gate reaches the nine
-minute step cap, the options are two accept jobs splitting the suite across two
-devices, a larger runner tier, or fewer acceptance files per build cycle. None is
-in scope here.
+roughly ninety seconds of CI time (about half that on the local emulator). At
+four files the build has 4.5 minutes of slack, and the local gate has about one
+minute inside its own five-minute figure; a fifth and sixth file spend most of
+both. If the gate reaches the nine minute step cap, the options are two accept
+jobs splitting the suite across two devices, a larger runner tier, or fewer
+acceptance files per build cycle. None is in scope here.
 
 ## Declared pins and drift (tasks 2.2, 2.4)
 
