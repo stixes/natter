@@ -109,8 +109,12 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
 
+      # Step timeouts sit inside the job's, and the job's sits inside the build
+      # budget in the spec. An overrun then names the stage that overran, rather
+      # than cancelling the job and leaving the reason to inference.
       - name: Provision device
         id: device
+        timeout-minutes: 6
         run: |
           scripts/ci-emulator.sh
           echo "device=$(cat "$NATTER_CI_EVIDENCE/device-serial")" >>"$GITHUB_OUTPUT"
@@ -131,6 +135,7 @@ jobs:
       # which is a different verdict from a gate that says the build is not
       # releasable.
       - name: Run acceptance gate
+        timeout-minutes: 8
         env:
           NATTER_ACCEPT_DEVICE: ${{ steps.device.outputs.device }}
         run: |

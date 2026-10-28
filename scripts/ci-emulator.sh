@@ -35,6 +35,11 @@ die() {
 evidence=${NATTER_CI_EVIDENCE:-build/ci-evidence}
 avd=${AVD_NAME:-natter-ci}
 boot_timeout=${NATTER_BOOT_TIMEOUT:-420}
+# The emulator process and the device that adb can see are two different
+# milestones, and they are minutes apart: the process answers its own socket
+# almost at once, while `adb devices` reports a usable device only after the
+# guest has come far enough up to speak the adb protocol.
+adb_timeout=${NATTER_ADB_TIMEOUT:-240}
 
 platform=${ANDROID_PLATFORM:-}
 build_tools=${ANDROID_BUILD_TOOLS:-}
@@ -200,8 +205,11 @@ launch_emulator() {
   local bin
   bin=$([ -x "$emulator_bin" ] && printf '%s' "$emulator_bin" || printf 'emulator')
   say "launching emulator (log: $evidence/emulator.log)"
+  # -no-metrics is not politeness: the emulator warns that its metrics prompt
+  # will become a one-time blocking prompt in a future release, and a blocking
+  # prompt in a headless device stage is a hang with no answer.
   nohup "$bin" "@$avd" \
-    -no-window -no-audio -no-boot-anim -no-snapshot \
+    -no-window -no-audio -no-boot-anim -no-snapshot -no-metrics \
     -gpu swiftshader_indirect -accel on -cores 2 \
     -ports 5554,5555 \
     >>"$evidence/emulator.log" 2>&1 &
@@ -209,11 +217,24 @@ launch_emulator() {
 }
 
 resolve_serial() {
-  local serial
-  serial=$("$adb_bin" devices | awk 'NR > 1 && $2 == "device" { print $1; exit }')
-  [ -n "$serial" ] || die "no emulator device appeared in adb devices"
-  printf '%s\n' "$serial" >"$evidence/device-serial"
-  say "device serial $serial"
+  local serial deadline
+  deadline=$((SECONDS + adb_timeout))
+  say "waiting for a usable device in adb devices (limit ${adb_timeout}s)"
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    # An emulator registers as `offline` before it registers as `device`, so a
+    # single look at this list right after launch finds nothing and means
+    # nothing. Only a serial in state `device` can be given to the gate.
+    serial=$("$adb_bin" devices | awk 'NR > 1 && $2 == "device" && $1 ~ /^emulator-/ { print $1; exit }')
+    if [ -n "$serial" ]; then
+      printf '%s\n' "$serial" >"$evidence/device-serial"
+      say "device serial $serial after ${SECONDS}s"
+      return 0
+    fi
+    sleep 5
+  done
+  "$adb_bin" devices >&2
+  tail -n 20 "$evidence/emulator.log" >&2
+  die "no emulator device became usable in adb devices within ${adb_timeout}s (adb devices above, emulator log tail above)"
 }
 
 wait_for_boot() {
