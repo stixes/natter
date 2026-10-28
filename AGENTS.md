@@ -46,6 +46,15 @@ We compete on subtraction. Every feature we refuse to build is the product.
 - Emulator host, address, and key details live in the git-ignored local notes, never in a commit
 - `flutter analyze && flutter test` must pass inside the container on any commit; integration tests via `integration_test` run on the emulator
 
+### Continuous integration
+
+- `.github/workflows/ci.yml` builds every push on every branch, plus a manual run: a `checks` job (`flutter analyze`, `flutter test`) and an `accept` job that boots a throwaway emulator inside the runner and runs `scripts/accept.sh` unchanged against it
+- CI holds no secrets and configures no endpoint: the acceptance suite serves its own loopback endpoint, so live-endpoint rounds stay local and human-run
+- The device comes from `scripts/ci-emulator.sh`; the emulator deliberately stays out of the dev container
+- Superseded runs on a working branch are cancelled, runs on the default branch never are, and a cancelled or still-pending run is no verdict
+- Read the newest build's verdict for a pushed commit before starting the next change, archiving a change, or calling a build releasable: `gh run list --branch <branch> --limit 1`, or the commit's Checks page. A red verdict is fixed, re-run, or recorded as debt - never passed over in silence
+- CI toolchain pins live in the workflow `env:` block and mirror `.devcontainer/Dockerfile`; a `Check toolchain pins` step fails before any test runs when the two drift apart
+
 ## Publishing hygiene
 
 The remote is public, so every commit is **publishable** material: hosts, addresses, devices, machines, and people read as placeholders in anything committed, including docs, validation records, and test fixtures.
@@ -78,6 +87,7 @@ Rules:
 - Changelog entry (user-facing wording, not commit-speak)
 - A change that touches the network path owes on-device rounds against a live endpoint, recorded in `validation.md` beside the change. A round that gets descoped is named there as debt, and the change that owes it is named with it
 - Publishable scan clean on every commit (Publishing hygiene)
+- CI verdict green on the pushed commit, or a recorded reason it is not; a cancelled or pending run counts as no verdict rather than as a pass
 
 ## Tone and polish bar
 

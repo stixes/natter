@@ -34,6 +34,11 @@ Every change must be green in-container before commit:
 
     flutter analyze && flutter test
 
+Both that gate and the acceptance suite also run unattended on every push, in
+`.github/workflows/ci.yml`. That build boots its own throwaway emulator through
+`scripts/ci-emulator.sh`; none runs in this container, by design, and the
+script's preflight refuses to run anywhere without hardware acceleration.
+
 ## Emulator testing (default target)
 
 The default debug and integration target is the always-on Android emulator on

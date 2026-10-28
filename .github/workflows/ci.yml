@@ -1,0 +1,171 @@
+name: CI
+
+# One build per push, on every branch, plus an explicit manual run. Fork pull
+# requests are the only pull_request trigger: a same-repository PR head is a
+# branch, and its push already built that exact commit, so a commit is built
+# once rather than twice.
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Newest push wins on a working branch. On the default branch a run is never
+# cancelled, because a cancelled run is no verdict and the default branch is
+# where a verdict always has to exist.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+# Toolchain pins. `.devcontainer/Dockerfile` is the sibling definition: it pins
+# the same versions for the dev image and re-checks them at image build time.
+# The `Check toolchain pins (declared)` step below catches the two drifting
+# apart, and `Check toolchain pins (running)` catches the runner image quietly
+# supplying something else. platform-tools is deliberately not version-pinned:
+# the dev image pins it by presence, not by version.
+#
+# Cold-run timings (pub and Gradle caches empty) for the first green build are
+# recorded in openspec/changes/*/add-ci-acceptance-gate/validation.md.
+env:
+  FLUTTER_VERSION: "3.29.3"
+  JAVA_VERSION: "21"
+  ANDROID_PLATFORM: "35"
+  ANDROID_BUILD_TOOLS: "35.0.0"
+  AVD_NAME: natter-ci
+  NATTER_CI_EVIDENCE: build/ci-evidence
+
+jobs:
+  # The cheap gate: what `flutter analyze && flutter test` means locally, run
+  # unattended. Deliberately carries no Android SDK or emulator stage, so it
+  # answers in about two minutes.
+  checks:
+    name: checks
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check toolchain pins (declared)
+        run: |
+          fail=0
+          for needle in \
+            "Flutter $FLUTTER_VERSION" \
+            "\"$JAVA_VERSION." \
+            "platforms;android-$ANDROID_PLATFORM" \
+            "build-tools;$ANDROID_BUILD_TOOLS"; do
+            if ! grep -qF -- "$needle" .devcontainer/Dockerfile; then
+              echo "::error::declared pin \"$needle\" does not appear in .devcontainer/Dockerfile: the CI pin and the dev image pin have drifted apart"
+              fail=1
+            fi
+          done
+          [ "$fail" -eq 0 ]
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: gradle
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Check toolchain pins (running)
+        run: |
+          flutter --version | grep -F "Flutter $FLUTTER_VERSION"
+          java -version 2>&1 | grep -F "\"$JAVA_VERSION."
+
+      - name: Static analysis
+        run: flutter analyze
+
+      - name: Unit and widget tests
+        run: flutter test
+
+  # The release gate from the acceptance-testing spec, unchanged, on a device
+  # this build provisions and throws away. No secrets, no endpoint, no
+  # --dart-define: the suite serves its own endpoint on the device's loopback.
+  accept:
+    name: accept
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check toolchain pins (declared)
+        run: |
+          fail=0
+          for needle in \
+            "Flutter $FLUTTER_VERSION" \
+            "\"$JAVA_VERSION." \
+            "platforms;android-$ANDROID_PLATFORM" \
+            "build-tools;$ANDROID_BUILD_TOOLS"; do
+            if ! grep -qF -- "$needle" .devcontainer/Dockerfile; do
+              echo "::error::declared pin \"$needle\" does not appear in .devcontainer/Dockerfile: the CI pin and the dev image pin have drifted apart"
+              fail=1
+            fi
+          done
+          [ "$fail" -eq 0 ]
+
+      # Hardware acceleration for the emulator is present on hosted Linux
+      # runners; the device node needs its permissions opened.
+      - name: Enable KVM group permissions
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -l /dev/kvm
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: gradle
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Provision device
+        id: device
+        run: |
+          scripts/ci-emulator.sh
+          echo "device=$(cat "$NATTER_CI_EVIDENCE/device-serial")" >>"$GITHUB_OUTPUT"
+
+      # The Android-side version check can only be meaningful once the device
+      # stage has installed these packages; checking earlier would manufacture a
+      # failure that means nothing.
+      - name: Check toolchain pins (Android packages)
+        run: |
+          sdkmanager --list_installed | grep -F "platforms;android-$ANDROID_PLATFORM"
+          sdkmanager --list_installed | grep -F "build-tools;$ANDROID_BUILD_TOOLS"
+          sdkmanager --list_installed | grep -F "platform-tools"
+
+      # Marker only: its absence in uploaded evidence says the gate never ran,
+      # which is a different verdict from a gate that says the build is not
+      # releasable.
+      - name: Run acceptance gate
+        env:
+          NATTER_ACCEPT_DEVICE: ${{ steps.device.outputs.device }}
+        run: |
+          touch "$NATTER_CI_EVIDENCE/gate-ran"
+          scripts/accept.sh
+
+      - name: Tear down device
+        if: ${{ always() }}
+        run: scripts/ci-emulator.sh teardown
+
+      - name: "Upload device evidence (accept job: provisioning and gate logs)"
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: accept-device-evidence-${{ github.run_id }}
+          path: ${{ env.NATTER_CI_EVIDENCE }}
+          if-no-files-found: warn

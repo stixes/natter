@@ -2,6 +2,23 @@
 
 Notes here are user-facing, not commit-speak.
 
+## add-ci-acceptance-gate
+
+Every push now gets a verdict on its own commit.
+
+- A build runs on every branch: static analysis, the widget test suite, and the
+  acceptance gate, each with its own verdict, on a test device the build creates
+  for itself and throws away afterwards.
+- Nothing to configure, and nothing to hand over: the build needs no key and no
+  endpoint, and it never contacts your own gateway. The rounds that check a live
+  endpoint still happen on a real device, run by a person.
+- A newer push replaces an in-flight build on a working branch. The default
+  branch always gets a verdict, and a build that was cancelled does not count as
+  a pass.
+- Device failures name the stage: "the device could not be provisioned" is a
+  different verdict from "this build is not releasable", and the logs from the
+  failing stage are attached to the run.
+
 ## render-markdown-replies
 
 Replies are formatted now, not raw markdown.

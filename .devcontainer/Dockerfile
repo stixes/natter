@@ -8,7 +8,9 @@
 #   Android cmdline-tools 11076708, platforms;android-35,
 #   build-tools;35.0.0, platform-tools 35.0.2, git.
 # Deliberately absent: emulator (stack rule: on-device testing via
-# host-forwarded adb).
+# host-forwarded adb). CI provisions its own throwaway device instead, in
+# scripts/ci-emulator.sh, and .github/workflows/ci.yml mirrors the pins above
+# in its env block - the workflow's first step fails if the two drift apart.
 
 FROM ghcr.io/cirruslabs/flutter:3.29.3
 
