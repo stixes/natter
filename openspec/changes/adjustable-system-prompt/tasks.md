@@ -71,7 +71,7 @@ launches the app in-process and cannot kill and relaunch it.
 
 ## 4. Acceptance suite
 
-- [ ] 4.1 Add `integration_test/accept/system_prompt_accept_test.dart`, one
+- [x] 4.1 Add `integration_test/accept/system_prompt_accept_test.dart`, one
   scenario per requirement it confirms and named in the suite's
   `capability / requirement` style, plus a `setPromptField` helper in
   `harness.dart` (field index 3, after Model; `configureEndpoint` keeps using
@@ -83,7 +83,7 @@ launches the app in-process and cannot kill and relaunch it.
   rendered text contains the prompt after a reply. The file's last scenario
   resets to default so later suite files see a default install. Verify
   `scripts/accept.sh` exits 0 on the emulator on `<dev-box>`.
-- [ ] 4.2 Extend `chat-streaming / Streaming reply` in
+- [x] 4.2 Extend `chat-streaming / Streaming reply` in
   `integration_test/accept/chat_streaming_accept_test.dart` to confirm the
   modified `Streaming reply delivery` scenario: `lastRequestBody['messages']`
   starts with one `system` message followed by the user turn. Verify

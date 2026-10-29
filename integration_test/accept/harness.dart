@@ -21,6 +21,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:natter/main.dart' as app;
 import 'package:natter/ui/message_bubble.dart';
+import 'package:natter/ui/settings_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// A scripted OpenAI-compatible endpoint on the device's loopback interface.
@@ -222,19 +223,67 @@ Future<void> tick(
 Future<void> hideKeyboard(WidgetTester tester) =>
     SystemChannels.textInput.invokeMethod('TextInput.hide');
 
-/// Types a base URL and model into the endpoint screen (key left empty; the
+/// Types a base URL and model into the settings screen (key left empty; the
 /// helper text says local servers often need none) and saves.
 Future<void> configureEndpoint(
   WidgetTester tester, {
   required String baseUrl,
   required String model,
 }) async {
-  await tester.tap(find.byIcon(Icons.settings_outlined));
-  await settle(tester);
+  await openSettings(tester);
   final fields = find.byType(TextField);
   await tester.enterText(fields.at(0), baseUrl);
   await tester.enterText(fields.at(2), model);
   await hideKeyboard(tester);
+  await saveSettings(tester);
+}
+
+/// Opens the settings screen over the chat screen.
+Future<void> openSettings(WidgetTester tester) async {
+  await tester.tap(find.byIcon(Icons.settings_outlined));
+  await settle(tester);
+}
+
+/// The settings screen's System prompt field: the fourth, after Model.
+///
+/// Found by its label rather than by index, so a field on the chat screen
+/// cannot shift what the helper types into.
+Finder promptField() => find.descendant(
+  of: find.byType(SettingsScreen),
+  matching: find.widgetWithText(TextField, 'System prompt'),
+);
+
+/// What the System prompt field currently holds, as the screen has it.
+String promptFieldText(WidgetTester tester) =>
+    tester.widget<TextField>(promptField()).controller!.text;
+
+/// Replaces the System prompt field's text and saves; an empty [prompt] is
+/// the cleared state, which sends no system message.
+Future<void> setPromptField(WidgetTester tester, String prompt) async {
+  await openSettings(tester);
+  await tester.enterText(promptField(), prompt);
+  await hideKeyboard(tester);
+  await saveSettings(tester);
+}
+
+/// Scrolls the settings list to its end and taps Save.
+///
+/// The list builds its children lazily, and the multi-line prompt field makes
+/// it tall enough that Save can sit outside the built range - a bare tap would
+/// fail on an empty finder rather than on the behaviour under test. The offset
+/// is moved directly because a gesture drag at the list's centre is swallowed
+/// by whichever text field sits there.
+Future<void> saveSettings(WidgetTester tester) async {
+  final position = tester.state<ScrollableState>(
+    find.descendant(
+      of: find.byType(SettingsScreen),
+      matching: find.byType(Scrollable),
+    ).first,
+  ).position;
+  if (position.pixels < position.maxScrollExtent) {
+    position.jumpTo(position.maxScrollExtent);
+    await tick(tester);
+  }
   await tester.tap(find.widgetWithText(FilledButton, 'Save'));
   await settle(tester);
 }

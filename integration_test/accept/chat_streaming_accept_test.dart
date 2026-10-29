@@ -3,6 +3,8 @@
 // Scenario map (openspec/specs/chat-streaming/spec.md):
 //   - Endpoint configuration .......... first launch is unconfigured
 //   - Streaming reply delivery ........ configure, send, stream, commit
+//                                        (and the request shape: one system
+//                                        message ahead of the turns)
 //   - Cancellation ..................... stop mid-stream keeps partial;
 //                                        stop during thinking commits nothing
 //   - Request failures ............... unreachable endpoint surfaces Retry,
@@ -68,6 +70,19 @@ void main() {
           reason: 'the configured model must ride the wire');
       expect(endpoint.lastRequestBody?['stream'], true,
           reason: 'the app must ask for a streaming reply');
+
+      // Request shape, now that a system prompt leads it (the widened
+      // `Streaming reply delivery` scenario in adjustable-system-prompt).
+      final messages = endpoint.lastRequestBody?['messages'] as List<Object?>;
+      final roles = messages
+          .map((m) => (m as Map<String, Object?>)['role'])
+          .toList();
+      expect(roles, ['system', 'user'],
+          reason: 'one system message must lead the conversation turns');
+      final prompt =
+          (messages.first as Map<String, Object?>)['content'] as String;
+      expect(prompt, isNotEmpty,
+          reason: 'a fresh install sends the built-in default, not nothing');
     },
     timeout: const Timeout(Duration(minutes: 2)),
   );
