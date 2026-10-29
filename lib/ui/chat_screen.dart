@@ -71,7 +71,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         ),
         actions: [
           IconButton(
-            tooltip: 'Endpoint',
+            tooltip: 'Settings',
             icon: const Icon(Icons.settings_outlined),
             onPressed:
                 () => Navigator.of(context).push(

@@ -6,12 +6,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:natter/domain/chat_message.dart';
 import 'package:natter/domain/conversation_summary.dart';
 import 'package:natter/domain/endpoint_profile.dart';
+import 'package:natter/domain/system_prompt.dart';
 import 'package:natter/domain/stream_delta.dart';
 import 'package:natter/state/chat_providers.dart';
 import 'package:natter/ui/chat_screen.dart';
 import 'package:natter/data/chat_completions_client.dart';
 import 'package:natter/ui/message_bubble.dart';
 import 'package:natter/ui/natter_mark.dart';
+import 'package:natter/ui/settings_screen.dart';
 
 import 'support/test_support.dart';
 
@@ -24,6 +26,29 @@ Future<void> _sendMessage(WidgetTester tester, String text) async {
   await tester.enterText(find.byType(TextField).first, text);
   await tester.tap(find.byIcon(Icons.arrow_upward));
   await tester.pump();
+}
+
+/// Scrolls the settings list to its bottom and taps Save.
+///
+/// The list builds its children lazily: with the system prompt field in it,
+/// Save can sit outside the built range, so a bare tap would fail on an empty
+/// finder. The offset is moved directly because a gesture drag at the list's
+/// centre is swallowed by whichever text field sits there.
+Future<void> _saveSettings(WidgetTester tester) async {
+  final position = tester
+      .state<ScrollableState>(
+        find
+            .descendant(
+              of: find.byType(SettingsScreen),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      )
+      .position;
+  position.jumpTo(position.maxScrollExtent);
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('Save'));
+  await tester.pumpAndSettle();
 }
 
 void main() {
@@ -331,16 +356,16 @@ void main() {
 
     expect(
       find.byType(TextField),
-      findsNWidgets(3),
-      reason: 'settings must expose only base URL, API key, and model',
+      findsNWidgets(4),
+      reason: 'settings exposes base URL, API key, model, and the system '
+          'prompt - and nothing else',
     );
 
     final fields = find.byType(TextField);
     await tester.enterText(fields.at(0), 'http://192.0.2.10:8080/v1');
     await tester.enterText(fields.at(1), 'sk-super-secret');
     await tester.enterText(fields.at(2), 'qwen3-14b');
-    await tester.tap(find.text('Save'));
-    await tester.pumpAndSettle();
+    await _saveSettings(tester);
 
     // Back on the chat screen the profile is live and the key is not echoed.
     expect(
@@ -365,6 +390,7 @@ void main() {
       'http://192.0.2.10:8080/v1',
       'sk-super-secret',
       'qwen3-14b',
+      kDefaultSystemPrompt,
     ]);
   });
 
@@ -380,8 +406,7 @@ void main() {
     await tester.enterText(fields.at(0), 'https://openrouter.ai/api/v1');
     await tester.enterText(fields.at(1), 'sk-plain-text-never-store-me');
     await tester.enterText(fields.at(2), 'some-model');
-    await tester.tap(find.text('Save'));
-    await tester.pumpAndSettle();
+    await _saveSettings(tester);
 
     final plain = await t.settings.contents();
     final secure = await t.secrets.contents();
@@ -973,7 +998,7 @@ void main() {
 
       expect(tester.takeException(), isNull);
       expectMarkBeforeTitle(tester);
-      final endpoint = find.byTooltip('Endpoint');
+      final endpoint = find.byTooltip('Settings');
       expect(endpoint.hitTestable(), findsOneWidget);
       expect(
         tester.getRect(find.text('Natter')).right,

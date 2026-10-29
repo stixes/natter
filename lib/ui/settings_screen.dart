@@ -2,11 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../domain/endpoint_profile.dart';
+import '../domain/system_prompt.dart';
 import '../state/chat_providers.dart';
 
-/// Minimal single-endpoint configuration: one base URL, one key, one model.
-/// Values are pre-filled from profile state, so reopening the screen shows
-/// what is currently in use.
+/// Configuration for what the app talks to and how it answers: one base URL,
+/// one key, one model, and the system prompt. Values are pre-filled from
+/// state, so reopening the screen shows what is currently in use.
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
 
@@ -18,6 +19,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   late final TextEditingController _baseUrl;
   late final TextEditingController _apiKey;
   late final TextEditingController _model;
+  late final TextEditingController _systemPrompt;
   bool _revealKey = false;
 
   @override
@@ -27,6 +29,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _baseUrl = TextEditingController(text: profile.baseUrl);
     _apiKey = TextEditingController(text: profile.apiKey);
     _model = TextEditingController(text: profile.model);
+    // Pre-filled with the prompt in effect, so the default shows as text and
+    // an edited or cleared prompt shows what was saved.
+    _systemPrompt = TextEditingController(
+      text: ref.read(systemPromptProvider).fieldText,
+    );
+    // The initial enabled state needs no listener call: it follows the text
+    // the field was just pre-filled with, and setState during initState
+    // would be an error.
+    _promptIsDefault = _systemPrompt.text == kDefaultSystemPrompt;
+    _systemPrompt.addListener(_refreshResetEnabled);
   }
 
   @override
@@ -34,8 +46,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _baseUrl.dispose();
     _apiKey.dispose();
     _model.dispose();
+    _systemPrompt.dispose();
     super.dispose();
   }
+
+  /// Typing only updates the enabled state of Reset; the Save below is what
+  /// commits an edit.
+  void _refreshResetEnabled() {
+    final isDefault = _systemPrompt.text == kDefaultSystemPrompt;
+    if (isDefault != _promptIsDefault) {
+      setState(() => _promptIsDefault = isDefault);
+    }
+  }
+
+  bool _promptIsDefault = true;
 
   Future<void> _save() async {
     await ref.read(profileProvider.notifier).save(
@@ -45,6 +69,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         model: _model.text,
       ),
     );
+    await ref.read(systemPromptProvider.notifier).save(_systemPrompt.text);
     if (!mounted) return;
     Navigator.of(context).pop();
   }
@@ -52,7 +77,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Endpoint')),
+      appBar: AppBar(title: const Text('Settings')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -94,7 +119,34 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               border: OutlineInputBorder(),
             ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
+          // minLines/maxLines: the field grows with the text and stops at
+          // eight lines, scrolling internally, so the list does not stretch
+          // without bound as the user types.
+          TextField(
+            controller: _systemPrompt,
+            minLines: 3,
+            maxLines: 8,
+            autocorrect: false,
+            decoration: const InputDecoration(
+              labelText: 'System prompt',
+              helperText: 'Sent before every chat. Leave empty to send none.',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          // Reset only replaces the field text; the Save below commits it,
+          // matching how every other field on this screen behaves. It sits in
+          // focus order after the field and before Save.
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: TextButton(
+              onPressed: _promptIsDefault
+                ? null
+                : () => _systemPrompt.text = kDefaultSystemPrompt,
+              child: const Text('Reset to default'),
+            ),
+          ),
+          const SizedBox(height: 8),
           FilledButton(onPressed: _save, child: const Text('Save')),
         ],
       ),
