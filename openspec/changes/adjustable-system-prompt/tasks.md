@@ -62,7 +62,7 @@ launches the app in-process and cannot kill and relaunch it.
   state, plus a semantics check that Reset has its label and a 48x48 dp target,
   and that the field does not clip at 2.0 text scale. Run
   `flutter test test/settings_screen_test.dart test/chat_screen_test.dart`.
-- [ ] 3.2 On-device look on the emulator on `<dev-box>` (or `<device>` as
+- [x] 3.2 On-device look on the emulator on `<dev-box>` (or `<device>` as
   fallback): settings screen in light and dark, a long prompt scrolling inside
   the field with the keyboard up and Save still reachable, Reset enabled and
   disabled, and TalkBack focus order field, Reset, Save. Check against
@@ -91,7 +91,7 @@ launches the app in-process and cannot kill and relaunch it.
 
 ## 5. Live round and release notes
 
-- [ ] 5.1 Live on-device round against a live endpoint on
+- [x] 5.1 Live on-device round against a live endpoint on
   `<llama-swap-host>` (URL, model, and key via `--dart-define`, never
   committed), recorded in a new `validation.md`: with the default prompt, send
   the same three probes (a short factual question, a "compare these options"
@@ -100,11 +100,11 @@ launches the app in-process and cannot kill and relaunch it.
   prompt cleared. Record any model whose template rejects the `system` role and
   confirm the surfaced error and the clear-to-recover path. Settle the final
   default wording from these replies and update the constant if it changes.
-- [ ] 5.2 Add a user-facing `CHANGELOG.md` entry: replies are now brief and
+- [x] 5.2 Add a user-facing `CHANGELOG.md` entry: replies are now brief and
   phone-friendly by default, where the setting lives, how to edit, reset, or
   clear it, and that it never appears in chats or history. Verify the entry
   reads as user-facing prose with no commit-speak.
-- [ ] 5.3 Verify `flutter analyze && flutter test` pass in the devcontainer and
+- [x] 5.3 Verify `flutter analyze && flutter test` pass in the devcontainer and
   `openspec validate adjustable-system-prompt --strict` is green.
 
 ## Workflow follow-up
