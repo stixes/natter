@@ -65,10 +65,13 @@ stale launcher frame while the app holds focus, so pixels came from inside the
 app - a disposable integration test rasterised the painted
 `RenderRepaintBoundary` for `SettingsScreen`, wrote it to the app's own cache
 directory, and held the process open while `adb run-as ... cat code_cache/<name>.png`
-pulled it. Frames are in the git-ignored tool directory, not in the commit.
-Five frames per theme: default prompt, long prompt with the field scrolled to
-its tail, long prompt with the list scrolled to its end, cleared field, and the
-field after `Reset to default`.
+pulled it. Nothing frame-like is in the commit; the captured frames sat in a
+Git-ignored scratch directory at the repo root, and that directory is deleted
+once the round is recorded, so the frames themselves are gone.
+
+Five frames per theme were pulled: default prompt, long prompt with the field
+scrolled to its tail, long prompt with the list scrolled to its end, cleared
+field, and the field after `Reset to default`.
 
 What the frames showed:
 

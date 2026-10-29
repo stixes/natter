@@ -52,6 +52,3 @@ android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
 
 # Local development notes (machine-specific; never commit)
 LOCAL_DEV_NOTES.md
-
-# Scratch for on-device runs: disposable probes, captured frames, relay logs
-.tool-tmp/
