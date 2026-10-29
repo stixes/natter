@@ -2,6 +2,26 @@
 
 Notes here are user-facing, not commit-speak.
 
+## adjustable-system-prompt
+
+Every chat now carries a short instruction, and it is yours to change.
+
+- Natter sends a built-in instruction ahead of every message: keep replies brief
+  and direct, use light formatting, avoid wide tables and large headings. It
+  shapes reply length and shape for a phone screen. Before this, nothing was
+  sent, so replies came back at whatever length the endpoint chose.
+- Settings holds a `System prompt` field below Model, with the shipped text
+  already in it. Edit it for your own wording - a persona, a length rule, a
+  "answer in one sentence" constraint - and the next message you send uses it.
+- `Reset to default` puts the shipped text back in the field, then Save keeps
+  it. The button is greyed out while the field already holds that text.
+- Clear the field to send no instruction at all. An empty field saves as empty,
+  and the reply comes back unshaped.
+- The instruction is not part of your conversation. It never appears in the
+  chat, in a reply, or in saved history. It does go to your endpoint with each
+  request, like the rest of the chat, and it is a plain setting rather than a
+  secret, so it is not kept in the keystore.
+
 ## add-ci-acceptance-gate
 
 Every push now gets a verdict on its own commit.
