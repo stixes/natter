@@ -17,8 +17,11 @@ Future<void> main() async {
       ),
     ],
   );
-  // URL/model come from durable settings, the key from the keystore.
+  // URL/model come from durable settings, the key from the keystore. The
+  // system prompt is plain settings too, loaded before runApp so the
+  // settings screen never shows a value it is about to overwrite.
   await container.read(profileProvider.notifier).loadStored();
+  await container.read(systemPromptProvider.notifier).loadStored();
 
   // Expired chats are gone before anything reads history. A storage failure
   // here must not stop startup; expiry simply waits for the next launch.

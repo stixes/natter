@@ -32,9 +32,14 @@ class ChatRequestFailure implements Exception {
 /// The streaming request seam: the conversation controller depends on this,
 /// never on `http` directly, so tests can drive streams deterministically.
 abstract interface class ChatStreamService {
+  /// [systemPrompt] is the prompt in effect at send time; an empty string
+  /// means no system message. It is a request parameter, never a
+  /// [ChatMessage] — the prompt must not be able to reach conversation
+  /// storage (see design.md).
   Stream<StreamDelta> stream({
     required EndpointProfile profile,
     required List<ChatMessage> messages,
+    String systemPrompt = '',
   });
 }
 
@@ -108,6 +113,7 @@ class ChatCompletionsClient implements ChatStreamService {
   Stream<StreamDelta> stream({
     required EndpointProfile profile,
     required List<ChatMessage> messages,
+    String systemPrompt = '',
   }) async* {
     final request =
         http.Request('POST', completionsUri(profile.baseUrl))
@@ -117,12 +123,19 @@ class ChatCompletionsClient implements ChatStreamService {
             if (profile.apiKey.isNotEmpty)
               'authorization': 'Bearer ${profile.apiKey}',
           })
-          ..body =
-              jsonEncode({
-                'model': profile.model,
-                'stream': true,
-                'messages': messages.map((m) => m.toWireFormat()).toList(),
-              });
+          ..body = jsonEncode({
+            'model': profile.model,
+            'stream': true,
+            'messages': [
+              // The system prompt rides ahead of the conversation as one
+              // wire-level message; it never becomes a ChatMessage.
+              if (systemPrompt.isNotEmpty) {
+                'role': 'system',
+                'content': systemPrompt,
+              },
+              ...messages.map((m) => m.toWireFormat()),
+            ],
+          });
 
     http.StreamedResponse response;
     try {
