@@ -50,7 +50,7 @@ launches the app in-process and cannot kill and relaunch it.
 
 ## 3. Settings screen
 
-- [ ] 3.1 In `lib/ui/settings_screen.dart`, add the multi-line `System prompt`
+- [x] 3.1 In `lib/ui/settings_screen.dart`, add the multi-line `System prompt`
   field below Model (pre-filled with the prompt in effect; min 3, max 8 lines,
   then internal scroll), the helper text and `Reset to default` text button
   from design.md (disabled while the field holds the default), save it with the
