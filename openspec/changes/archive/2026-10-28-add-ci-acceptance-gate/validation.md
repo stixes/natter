@@ -4,7 +4,12 @@
 
 CI: GitHub-hosted `ubuntu-24.04`, no repository or organisation secrets, branch
 `add-ci-acceptance-gate` and a scratch branch `ci-probes`, 2026-10-28. Every run
-below is a push or dispatch on this change's branch unless named otherwise.
+below is a push or dispatch on this change's branch unless named otherwise. The
+scratch branch was deleted once the round was taken, so where it is named below,
+the claim rests on the run id and its Actions log, which outlive the branch.
+Its one sabotage (a `system-images;...;x86_99` image that cannot exist, to see
+whether the device stage reports a bad image choice) is reproducible from the
+current tip of `scripts/ci-emulator.sh`.
 
 Local (dev container, Flutter 3.29.3 / Dart 3.7.2): `flutter analyze` clean,
 `flutter test` green, `bash -n` clean on both new scripts, `scripts/ci-pins.sh`
