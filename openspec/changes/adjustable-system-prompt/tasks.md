@@ -10,7 +10,7 @@ launches the app in-process and cannot kill and relaunch it.
 
 ## 1. Request path
 
-- [ ] 1.1 Add a `systemPrompt` parameter (empty string means none) to
+- [x] 1.1 Add a `systemPrompt` parameter (empty string means none) to
   `ChatStreamService.stream` in `lib/data/chat_completions_client.dart`, and
   have `ChatCompletionsClient` prepend one `{'role': 'system', 'content': ...}`
   when it is non-empty. Update `ScriptedChatService` and `RecordedRequest` in
@@ -19,17 +19,17 @@ launches the app in-process and cannot kill and relaunch it.
   pattern with: a non-empty prompt lands as the single first message ahead of
   user and assistant turns; an empty prompt leaves `messages` exactly as today.
   Verify `flutter test test/chat_completions_client_test.dart`.
-- [ ] 1.2 Leave `ChatMessage` and `ChatRole` user/assistant only, per design.md;
+- [x] 1.2 Leave `ChatMessage` and `ChatRole` user/assistant only, per design.md;
   verify with `grep -n "system" lib/domain/chat_message.dart` returning
   nothing and `flutter analyze` clean.
 
 ## 2. Prompt setting
 
-- [ ] 2.1 Add the built-in default as one `const` string in `lib/domain/`
+- [x] 2.1 Add the built-in default as one `const` string in `lib/domain/`
   (starting text from design.md), plus a small setting type that resolves the
   prompt in effect from the stored state. Verify with unit tests in a new
   `test/system_prompt_test.dart` covering default, edited, and cleared.
-- [ ] 2.2 Add `SystemPromptRepository` in `lib/data/` over `KeyValueStore`,
+- [x] 2.2 Add `SystemPromptRepository` in `lib/data/` over `KeyValueStore`,
   mirroring `ProfileRepository`, with the `chat.systemPrompt` tri-state and
   save rules from design.md (whitespace-only stores `""`, default text deletes
   the key, other text is stored trimmed). Extend `test/system_prompt_test.dart`
@@ -38,7 +38,7 @@ launches the app in-process and cannot kill and relaunch it.
   each survive a simulated restart; saving the default leaves the key absent;
   the prompt never appears in the secure store's `contents()`. Verify
   `flutter test test/system_prompt_test.dart`.
-- [ ] 2.3 Add `systemPromptProvider` (a notifier with `loadStored()` and
+- [x] 2.3 Add `systemPromptProvider` (a notifier with `loadStored()` and
   `save()`, mirroring `ProfileController`) in `lib/state/chat_providers.dart`,
   await `loadStored()` in `lib/main.dart` beside the profile load, and pass the
   prompt in effect from `ConversationController` on both send and retry. In

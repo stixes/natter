@@ -7,11 +7,13 @@ import '../data/chat_completions_client.dart';
 import '../data/conversation_repository.dart';
 import '../data/key_value_store.dart';
 import '../data/profile_repository.dart';
+import '../data/system_prompt_repository.dart';
 import '../domain/assistant_draft.dart';
 import '../domain/chat_message.dart';
 import '../domain/conversation_summary.dart';
 import '../domain/endpoint_profile.dart';
 import '../domain/stream_delta.dart';
+import '../domain/system_prompt.dart';
 
 /// Plain settings location for base URL and model. Production overrides this
 /// with the durable [SharedPreferencesKeyValueStore]; the in-memory default
@@ -82,6 +84,34 @@ class ProfileController extends Notifier<EndpointProfile> {
 final profileProvider = NotifierProvider<ProfileController, EndpointProfile>(
   ProfileController.new,
 );
+
+final systemPromptRepositoryProvider = Provider<SystemPromptRepository>(
+  (ref) => SystemPromptRepository(settings: ref.watch(settingsStoreProvider)),
+);
+
+/// The system prompt setting in effect, mirroring [ProfileController]. The
+/// saved turns never hold it: it is a request parameter, read fresh at send
+/// time by [ConversationController].
+class SystemPromptController extends Notifier<SystemPromptSetting> {
+  @override
+  SystemPromptSetting build() => SystemPromptSetting.stored(null);
+
+  /// Restores what was stored in plain settings (default / edited / cleared).
+  Future<void> loadStored() async {
+    state = await ref.read(systemPromptRepositoryProvider).load();
+  }
+
+  /// Applies the repository's save rules to [fieldText] and updates state.
+  Future<void> save(String fieldText) async {
+    await ref.read(systemPromptRepositoryProvider).save(fieldText);
+    state = await ref.read(systemPromptRepositoryProvider).load();
+  }
+}
+
+final systemPromptProvider =
+    NotifierProvider<SystemPromptController, SystemPromptSetting>(
+      SystemPromptController.new,
+    );
 
 /// The in-flight assistant reply plus everything the chat screen needs to
 /// know: committed messages, the draft, and any surfaced stream failure.
@@ -210,7 +240,9 @@ class ConversationController extends Notifier<ConversationState> {
       return;
     }
 
-    _start(profile, messages);
+    // The prompt is read at send time, so send and retry each pick up the
+    // value in effect when the request starts.
+    _start(profile, messages, ref.read(systemPromptProvider).inEffect);
   }
 
   String _newConversationId() =>
@@ -238,7 +270,7 @@ class ConversationController extends Notifier<ConversationState> {
       state = state.copy(error: 'Set a base URL, API key, and model first.');
       return;
     }
-    _start(profile, state.messages);
+    _start(profile, state.messages, ref.read(systemPromptProvider).inEffect);
   }
 
   /// Cancels the in-flight stream. Whatever answer text already arrived is
@@ -323,7 +355,11 @@ class ConversationController extends Notifier<ConversationState> {
     );
   }
 
-  void _start(EndpointProfile profile, List<ChatMessage> messages) {
+  void _start(
+    EndpointProfile profile,
+    List<ChatMessage> messages,
+    String systemPrompt,
+  ) {
     _stop();
     final draft = AssistantDraft();
     state = ConversationState(
@@ -333,7 +369,7 @@ class ConversationController extends Notifier<ConversationState> {
       historyNotice: state.historyNotice,
     );
 
-    _subscription = _service(profile, messages).listen(
+    _subscription = _service(profile, messages, systemPrompt).listen(
       (delta) {
         if (state.draft != draft) return; // cancelled or already settled
         draft.apply(delta);
@@ -352,9 +388,11 @@ class ConversationController extends Notifier<ConversationState> {
   Stream<StreamDelta> _service(
     EndpointProfile profile,
     List<ChatMessage> messages,
+    String systemPrompt,
   ) => ref.read(chatStreamServiceProvider).stream(
     profile: profile,
     messages: messages,
+    systemPrompt: systemPrompt,
   );
 
   /// Normal end of stream: commit the answer, applying the blank-answer

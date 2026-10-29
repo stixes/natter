@@ -13,10 +13,13 @@ import 'package:natter/domain/stream_delta.dart';
 import 'package:natter/state/chat_providers.dart';
 
 class RecordedRequest {
-  RecordedRequest(this.profile, this.messages);
+  RecordedRequest(this.profile, this.messages, this.systemPrompt);
 
   final EndpointProfile profile;
   final List<ChatMessage> messages;
+
+  /// The prompt the controller passed for this request; '' means none.
+  final String systemPrompt;
 }
 
 /// Drives a reply stream by hand so cancel / error / retry / blank-answer
@@ -29,8 +32,11 @@ class ScriptedChatService implements ChatStreamService {
   Stream<StreamDelta> stream({
     required EndpointProfile profile,
     required List<ChatMessage> messages,
+    String systemPrompt = '',
   }) {
-    requests.add(RecordedRequest(profile, List.of(messages)));
+    requests.add(
+      RecordedRequest(profile, List.of(messages), systemPrompt),
+    );
     final controller = StreamController<StreamDelta>();
     _controllers.add(controller);
     return controller.stream;

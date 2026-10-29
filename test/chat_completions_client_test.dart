@@ -173,6 +173,83 @@ data: [DONE]
     ]);
   });
 
+  test('a non-empty system prompt is the single first wire message', () async {
+    String? seenBody;
+    final client = ChatCompletionsClient(
+      httpClient: streamingClient(onRequest: (_, body) => seenBody = body),
+    );
+
+    await client
+        .stream(
+          profile: testProfile,
+          messages: [
+            ChatMessage(
+              role: ChatRole.user,
+              content: 'a',
+              createdAt: DateTime(2026, 1, 1, 9),
+            ),
+            ChatMessage(
+              role: ChatRole.assistant,
+              content: 'b',
+              createdAt: DateTime(2026, 1, 1, 9, 1),
+            ),
+            ChatMessage(
+              role: ChatRole.user,
+              content: 'c',
+              createdAt: DateTime(2026, 1, 1, 9, 2),
+            ),
+          ],
+          systemPrompt: 'Keep replies brief.',
+        )
+        .toList();
+
+    final payload = jsonDecode(seenBody!) as Map<String, Object?>;
+    expect(payload['messages'], [
+      {'role': 'system', 'content': 'Keep replies brief.'},
+      {'role': 'user', 'content': 'a'},
+      {'role': 'assistant', 'content': 'b'},
+      {'role': 'user', 'content': 'c'},
+    ]);
+    final systemMessages =
+        (payload['messages'] as List)
+            .where((m) => (m as Map)['role'] == 'system')
+            .toList();
+    expect(systemMessages.length, 1,
+        reason: 'exactly one system message, ahead of every turn');
+  });
+
+  test('an empty system prompt leaves messages exactly as before', () async {
+    String? seenBody;
+    final client = ChatCompletionsClient(
+      httpClient: streamingClient(onRequest: (_, body) => seenBody = body),
+    );
+
+    await client
+        .stream(
+          profile: testProfile,
+          messages: [
+            ChatMessage(
+              role: ChatRole.user,
+              content: 'a',
+              createdAt: DateTime(2026, 1, 1, 9),
+            ),
+            ChatMessage(
+              role: ChatRole.assistant,
+              content: 'b',
+              createdAt: DateTime(2026, 1, 1, 9, 1),
+            ),
+          ],
+          systemPrompt: '',
+        )
+        .toList();
+
+    final payload = jsonDecode(seenBody!) as Map<String, Object?>;
+    expect(payload['messages'], [
+      {'role': 'user', 'content': 'a'},
+      {'role': 'assistant', 'content': 'b'},
+    ]);
+  });
+
   test('an empty api key sends no authorization header at all', () async {
     // Local llama.cpp and llama-swap servers are the app's headline use case
     // and they accept unauthenticated requests.

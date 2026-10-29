@@ -5,6 +5,7 @@ import 'package:natter/domain/chat_message.dart';
 import 'package:natter/domain/conversation_summary.dart';
 import 'package:natter/domain/endpoint_profile.dart';
 import 'package:natter/domain/stream_delta.dart';
+import 'package:natter/domain/system_prompt.dart';
 import 'package:natter/state/chat_providers.dart';
 
 import 'support/test_support.dart';
@@ -956,6 +957,175 @@ void main() {
       );
       expect(state.historyNotice, contains('could not be loaded'));
       expect(state.draft, isNull);
+    });
+  });
+
+  group('system prompt on the request path', () {
+    test('a send carries the prompt in effect', () async {
+      final t = createTestContainer();
+      await t.container.read(profileProvider.notifier).save(testProfile);
+      await t.container
+          .read(systemPromptProvider.notifier)
+          .save('Answer in haiku, always.');
+
+      t.container.read(conversationProvider.notifier).send('hello');
+      await settle();
+
+      expect(t.service.requests.single.systemPrompt,
+          'Answer in haiku, always.');
+    });
+
+    test('with nothing stored, a send carries the built-in default', () async {
+      final t = createTestContainer();
+      await t.container.read(profileProvider.notifier).save(testProfile);
+
+      t.container.read(conversationProvider.notifier).send('hello');
+      await settle();
+
+      expect(
+        t.service.requests.single.systemPrompt,
+        kDefaultSystemPrompt,
+        reason: 'a fresh install sends the default with no setup',
+      );
+    });
+
+    test('a cleared prompt sends no system prompt at all', () async {
+      final t = createTestContainer();
+      await t.container.read(profileProvider.notifier).save(testProfile);
+      final prompt = t.container.read(systemPromptProvider.notifier);
+      await prompt.save('Answer in haiku, always.');
+      await prompt.save('   ');
+
+      t.container.read(conversationProvider.notifier).send('hello');
+      await settle();
+
+      expect(t.service.requests.single.systemPrompt, isEmpty);
+    });
+
+    test('a retry after the prompt changed carries the new prompt', () async {
+      final t = createTestContainer();
+      await t.container.read(profileProvider.notifier).save(testProfile);
+      final notifier = t.container.read(conversationProvider.notifier);
+
+      notifier.send('one');
+      await settle();
+      expect(t.service.requests.single.systemPrompt, kDefaultSystemPrompt);
+      t.service.fail(0, const ChatRequestFailure('boom'));
+      await settle();
+
+      await t.container
+          .read(systemPromptProvider.notifier)
+          .save('Answer tersely.');
+      notifier.retry();
+      await settle();
+
+      expect(t.service.requests, hasLength(2));
+      expect(t.service.requests.last.systemPrompt, 'Answer tersely.',
+          reason: 'the retried request picks up the changed prompt');
+      expect(t.service.requests.last.messages.last.content, 'one');
+    });
+
+    test('a reopened conversation carries the current prompt', () async {
+      final target = ConversationSummary(
+        id: 'target',
+        title: 'Target',
+        updatedAt: DateTime(2024, 1, 1),
+      );
+      final repository = FakeConversationRepository(
+        conversations: [target],
+        messagesByConversation: {
+          'target': [
+            ChatMessage(
+              role: ChatRole.user,
+              content: 'saved question',
+              createdAt: DateTime(2026, 1, 1, 9),
+            ),
+            ChatMessage(
+              role: ChatRole.assistant,
+              content: 'saved answer',
+              createdAt: DateTime(2026, 1, 1, 9, 1),
+            ),
+          ],
+        },
+      );
+      final t = createTestContainer(repository: repository);
+      await t.container.read(profileProvider.notifier).save(testProfile);
+      await t.container
+          .read(systemPromptProvider.notifier)
+          .save('Stay brief.');
+      final notifier = t.container.read(conversationProvider.notifier);
+
+      await notifier.openConversation('target');
+      notifier.send('next turn');
+      await settle();
+
+      final request = t.service.requests.single;
+      expect(request.systemPrompt, 'Stay brief.');
+      expect(
+        request.messages.map((m) => m.content).toList(),
+        ['saved question', 'saved answer', 'next turn'],
+        reason: 'the prompt rides ahead of the restored turns',
+      );
+    });
+
+    test('saved turns and the title hold no prompt text', () async {
+      final t = createTestContainer();
+      await t.container.read(profileProvider.notifier).save(testProfile);
+      const prompt = 'A sensitive instruction that must stay off the record.';
+      await t.container.read(systemPromptProvider.notifier).save(prompt);
+
+      final notifier = t.container.read(conversationProvider.notifier);
+      notifier.send('what is 2+2?');
+      await settle();
+      t.service.emit(0, const [StreamDelta(content: '4')]);
+      t.service.end(0);
+      await settle();
+
+      final state = t.container.read(conversationProvider);
+      expect(
+        state.messages.map((m) => m.content).toList(),
+        ['what is 2+2?', '4'],
+        reason: 'the transcript is the exchange only',
+      );
+      for (final saved in t.repository.savedTurns) {
+        expect(saved.message.content.contains(prompt), isFalse);
+        if (saved.title != null) {
+          expect(saved.title!.contains(prompt), isFalse);
+        }
+      }
+      expect(t.repository.savedTurns, isNotEmpty);
+      expect(
+        (await t.secrets.contents()).values.any((v) => v.contains(prompt)),
+        isFalse,
+        reason: 'the prompt never rides the keystore path',
+      );
+    });
+
+    test('a changed prompt leaves stored turns untouched', () async {
+      final t = createTestContainer();
+      await t.container.read(profileProvider.notifier).save(testProfile);
+
+      final notifier = t.container.read(conversationProvider.notifier);
+      notifier.send('first');
+      await settle();
+      t.service.emit(0, const [StreamDelta(content: 'reply one')]);
+      t.service.end(0);
+      await settle();
+
+      await t.container
+          .read(systemPromptProvider.notifier)
+          .save('A brand-new prompt.');
+
+      final state = t.container.read(conversationProvider);
+      expect(
+        state.messages.map((m) => m.content).toList(),
+        ['first', 'reply one'],
+        reason: 'editing the prompt alters no stored turn',
+      );
+      expect(
+        t.repository.savedTurns.map((s) => s.message.content).toList(),
+        ['first', 'reply one'],
+      );
     });
   });
 }
