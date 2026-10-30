@@ -51,6 +51,13 @@
   file reporting a verdict rather than a skip, exit 0. The five
   `message-copy` scenarios and the updated `reply-rendering / Assistant replies
   render as markdown` scenario are among them.
+- Round 3, after the accessibility label fix: the gate returned 20 scenario
+  verdicts green and one file, `conversation_history_accept_test.dart`, failing
+  at *load* with "The log reader stopped unexpectedly" - no scenario of its own
+  ever ran. That is the tooling dropping the debug connection, not an assertion.
+  Re-running that file alone came back green (exit 0). CI's `accept` job on a
+  throwaway emulator ran the same suite and came back green, which is the
+  verdict the record leans on.
 
 ## On-device look (task 2.4, emulator on `<dev-box>`)
 
@@ -87,6 +94,9 @@ Left as named debt rather than fixed inside this change:
   controls - Settings, Send, Cancel - carry their name in a tooltip and nothing
   else, and their `content-desc` in the tree is empty, exactly as the copy
   controls did. Fixing those is a separate change; this one only names the debt.
+- **A gate flake, named.** The load-time failure above is not a scenario
+  failure, and it did not repeat; nothing pins it, because there is nothing to
+  pin - a re-run is the check.
 - **The paste-back of an indented block into an editor.** What pins it instead
   is the acceptance read-back of a block through the real platform channel:
   `first_block():\n    return 1` with its four-space indent intact and no

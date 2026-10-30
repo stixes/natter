@@ -155,11 +155,26 @@ button, so 4.2 is the scenario the modified requirement names.
   deviation to weigh: the guidelines' keyboard/emoji bar is untouched, this
   change adds no text input, and the guidelines' no-long-press-as-only-path rule
   is what the visible controls satisfy.
-- [ ] 4.2 Run `flutter analyze && flutter test` in the devcontainer, then read
+- [x] 4.2 Run `flutter analyze && flutter test` in the devcontainer, then read
+  - `flutter analyze`: no issues. `flutter test`: 226 green, 22 of them this
+  change's. CI verdict read on the pushed `main` commit: run 41025247852,
+  completed success, 11m49s, both the `checks` job and the `accept` job green
+  on its throwaway emulator - so the acceptance suite, this change's scenarios
+  included, passed in a clean device environment too.
   the pushed commit's CI verdict with `gh run list --branch <branch> --limit 1`
   and record it. Verify: analyze clean, tests green, a CI verdict named rather
   than assumed.
-- [ ] 4.3 Run the publishable scan over commits and the published tree as
+- [x] 4.3 Run the publishable scan over commits and the published tree as
+  - 785 blobs across 52 commits scanned, then the pushed tree. Hits all benign:
+  the generic word "tailnet", `<dev-box>` and friends as placeholders, the
+  fixture key `sk-test-secret-value`, loopback `127.0.0.1` (the acceptance
+  endpoint the suite serves for itself). No hostname, no device, no live key.
+  This change's artifacts and `validation.md` carry placeholders only.
+  - One finding outside this change: an earlier commit *message* (9fb5a3f,
+  "Keep hosting references generic...") names a LAN address in prose about the
+  move to RFC 5737 space. AGENTS prescribes rewriting the leak out of history
+  rather than layering over it; that needs a force-push, so it was surfaced for
+  an owner's yes rather than done here.
   AGENTS.md prescribes (`git rev-list --all` blob scan, then the pushed tree),
   and confirm this change's artifacts and `validation.md` carry only placeholder
   hosts and RFC 5737 addresses. Verify: both scans clean with no follow-up
