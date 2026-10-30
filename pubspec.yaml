@@ -49,6 +49,12 @@ dependencies:
   # markdown ^7.3.1, which needs Dart ^3.9.0; 1.0.7 asks for markdown ^7.3.0
   # and stays on the dev image's Flutter 3.29.3 / Dart 3.7.2.
   flutter_markdown_plus: 1.0.7
+  # Exact pin, direct dependency: taking a fenced code block over so it can
+  # carry a copy button needs the parser's element and text node types, and
+  # flutter_markdown_plus does not re-export them (see lib/ui/message_bubble.dart).
+  # 7.3.0 is what flutter_markdown_plus 1.0.7 resolves to; anything newer asks
+  # for Dart ^3.9.0, past the dev image's Dart 3.7.2.
+  markdown: 7.3.0
 
 dev_dependencies:
   flutter_test:

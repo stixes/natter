@@ -15,6 +15,7 @@ import 'package:natter/ui/message_bubble.dart';
 import 'package:natter/ui/natter_mark.dart';
 import 'package:natter/ui/settings_screen.dart';
 
+import 'support/fake_clipboard.dart';
 import 'support/test_support.dart';
 
 Widget _app(ProviderContainer container) => UncontrolledProviderScope(
@@ -79,6 +80,37 @@ void main() {
     await tester.pump();
     expect(find.text('Hello world'), findsOneWidget);
     expect(find.byType(AnimatedPlaceholder), findsNothing);
+  });
+
+  testWidgets('a copy control lands with the committed turn, not the draft', (
+    tester,
+  ) async {
+    final t = createTestContainer();
+    await t.container.read(profileProvider.notifier).save(testProfile);
+    await tester.pumpWidget(_app(t.container));
+
+    await _sendMessage(tester, 'hi there');
+    await tester.pump();
+    // The turn just sent is already committed, so it carries a control while
+    // the answer is still waiting. The draft has none.
+    expect(find.byTooltip('Copy message'), findsOneWidget);
+    expect(find.textContaining('Waiting'), findsOneWidget);
+
+    t.service.emit(0, const [StreamDelta(content: 'Hel')]);
+    await tester.pump();
+    // Text has begun to stream: an answer in flight has nothing to copy yet.
+    expect(find.text('Hel'), findsOneWidget);
+    expect(find.byTooltip('Copy message'), findsOneWidget);
+
+    t.service.emit(0, const [StreamDelta(content: 'lo world')]);
+    await tester.pump(const Duration(milliseconds: 120));
+    expect(find.byTooltip('Copy message'), findsOneWidget);
+
+    t.service.end(0);
+    await tester.pump();
+    // Committed: both turns now carry one.
+    expect(find.text('Hello world'), findsOneWidget);
+    expect(find.byTooltip('Copy message'), findsNWidgets(2));
   });
 
   testWidgets('a streamed reply renders as markdown, not markup', (
@@ -342,6 +374,75 @@ void main() {
 
       expect(find.text('the entire answer was reasoning'), findsOneWidget);
       expect(find.textContaining('empty reply'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'a blank-answer fallback copies the text that was displayed',
+    (tester,
+    ) async {
+      final clipboard = FakeClipboard(tester)..install();
+      final t = createTestContainer();
+      await t.container.read(profileProvider.notifier).save(testProfile);
+      await tester.pumpWidget(_app(t.container));
+
+      await _sendMessage(tester, 'hi');
+      t.service.emit(0, const [
+        StreamDelta(reasoning: 'all of it was reasoning'),
+      ]);
+      t.service.end(0);
+      await tester.pump();
+
+      // The fallback resolved into the turn's content at commit, so the
+      // control copies what the screen showed.
+      expect(find.byTooltip('Copy message'), findsNWidgets(2));
+      await tester.tap(find.byTooltip('Copy message').last);
+      await tester.pump();
+
+      expect(await clipboard.read(), 'all of it was reasoning');
+    },
+  );
+
+  testWidgets(
+    'a partial answer committed on cancel copies what it got',
+    (tester,
+    ) async {
+      final clipboard = FakeClipboard(tester)..install();
+      final t = createTestContainer();
+      await t.container.read(profileProvider.notifier).save(testProfile);
+      await tester.pumpWidget(_app(t.container));
+
+      await _sendMessage(tester, 'hi');
+      t.service.emit(0, const [StreamDelta(content: 'partial')]);
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.stop_circle_outlined));
+      await tester.pump();
+
+      // The partial reply is a committed turn now, so it carries a control.
+      expect(find.byTooltip('Copy message'), findsNWidgets(2));
+      await tester.tap(find.byTooltip('Copy message').last);
+      await tester.pump();
+      expect(await clipboard.read(), 'partial');
+    },
+  );
+
+  testWidgets(
+    'a failed reply leaves no copy control behind, only Retry',
+    (tester,
+    ) async {
+      FakeClipboard(tester).install();
+      final t = createTestContainer();
+      await t.container.read(profileProvider.notifier).save(testProfile);
+      await tester.pumpWidget(_app(t.container));
+
+      await _sendMessage(tester, 'hi');
+      t.service.fail(0, const ChatRequestFailure('the endpoint went away'));
+      await tester.pump();
+
+      // The turn that failed produced nothing to copy; only the user's own
+      // turn has a control, and Retry is the response.
+      expect(find.byTooltip('Copy message'), findsOneWidget);
+      expect(find.text('Retry'), findsOneWidget);
     },
   );
 

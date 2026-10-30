@@ -53,6 +53,28 @@ void main() {
       );
     });
 
+    test('the copy control meets WCAG AA on its bubble in $brightness', () {
+      final scheme = ColorScheme.fromSeed(
+        seedColor: _seed,
+        brightness: brightness,
+      );
+
+      // The control carries the same ink token as the timestamp beside it, so
+      // it clears the bar the label clears. An icon-only control has no text,
+      // but its glyph still has to read against the bubble.
+      expect(
+        _ratio(scheme.onPrimaryContainer, scheme.primaryContainer),
+        greaterThanOrEqualTo(4.5),
+        reason: 'the $brightness control on the user bubble must clear AA',
+      );
+      expect(
+        _ratio(scheme.onSurface, scheme.surfaceContainerHighest),
+        greaterThanOrEqualTo(4.5),
+        reason:
+            'the $brightness control on the assistant bubble must clear AA',
+      );
+    });
+
     test('a rendered reply meets WCAG AA in $brightness', () {
       final scheme = ColorScheme.fromSeed(
         seedColor: _seed,

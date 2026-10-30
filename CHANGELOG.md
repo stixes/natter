@@ -2,6 +2,27 @@
 
 Notes here are user-facing, not commit-speak.
 
+## message-copy-actions
+
+Copy a reply, a turn, or a single code block without selecting any of it first.
+
+- Every finished turn carries a copy button next to its timestamp - yours and
+  the assistant's alike. One tap puts that text on the clipboard.
+- A reply that shows a code block gives that block its own button as well, so
+  you can take the code alone, indentation and line breaks and all, instead of
+  the reply wrapped around it.
+- Copying your own turn puts down exactly what you typed, characters of any
+  kind included. Copying a reply puts down the markdown the endpoint sent,
+  which pastes back whole into anything that understands markdown.
+- The button briefly becomes a check mark so you can see the copy landed, and
+  nothing opens that you have to dismiss. The buttons name themselves to a
+  screen reader (`Copy message`, `Copy code block`), and the label becomes
+  `Copied` once the copy is on the clipboard.
+- A reply that is still arriving offers nothing to copy. Stop one partway,
+  though, and the answer you got is copyable like any other.
+- Selecting part of a reply and copying from the platform's own toolbar still
+  works exactly as before.
+
 ## adjustable-system-prompt
 
 Every chat now carries a short instruction, and it is yours to change.

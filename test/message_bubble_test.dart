@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:natter/ui/message_bubble.dart';
+import 'support/fake_clipboard.dart';
 import 'support/test_support.dart';
 
 Widget _app(Widget child, {ThemeData? theme, NavigatorObserver? observer}) =>
@@ -247,6 +248,232 @@ print("hi")
       await tester.pumpAndSettle();
       expect(position.pixels, position.maxScrollExtent);
       expect(tester.getTopRight(code).dx, lessThanOrEqualTo(edge + 0.5));
+    });
+
+    testWidgets('a committed code block keeps its sideways scroll', (
+      tester,
+    ) async {
+      // The block is taken over for the copy button, so the scroll it used to
+      // have is reproduced here - which is why this pins the same behaviour
+      // the draft case above pins, with the button present.
+      FakeClipboard(tester).install();
+      final source = '```python\n'
+          'def a_signature_long_enough_to_exceed_the_width_of_the_bubble_'
+          'and_keep_going_and_going_on_and_on_forever_and_ever(a, b, c):\n'
+          '```';
+      await tester.pumpWidget(
+        _app(
+          MessageBubble(
+            content: source,
+            isMine: false,
+            copyText: source,
+            createdAt: DateTime(2026, 1, 1, 9, 5),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final scrollable = find.ancestor(
+        of: find.textContaining('a_signature_long_enough'),
+        matching: find.byType(Scrollable),
+      );
+      expect(scrollable, findsOneWidget);
+      final position = tester.state<ScrollableState>(scrollable).position;
+      expect(position.axis, Axis.horizontal);
+      expect(position.maxScrollExtent, greaterThan(0));
+
+      // The button sits beside the text, not over it: the block's whole width
+      // stays draggable.
+      final button = find.byTooltip('Copy code block');
+      expect(button, findsOneWidget);
+      expect(
+        tester.getRect(button).top,
+        lessThanOrEqualTo(
+          tester.getTopLeft(find.textContaining('a_signature_long_enough')).dy,
+        ),
+        reason: 'the button row sits above the code, never on top of it',
+      );
+    });
+
+    testWidgets('a block button copies its own block, indentation and all', (
+      tester,
+    ) async {
+      final clipboard = FakeClipboard(tester)..install();
+      const source = 'A short prose line.\n\n```python\n'
+          'def total(a, b):\n'
+          '    return a + b\n'
+          '```';
+      await tester.pumpWidget(
+        _app(
+          MessageBubble(
+            content: source,
+            isMine: false,
+            copyText: source,
+            createdAt: DateTime(2026, 1, 1, 9, 5),
+          ),
+        ),
+      );
+
+      // The block's button is named to a screen reader too.
+      expect(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is Semantics &&
+              widget.properties.label == 'Copy code block',
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byTooltip('Copy code block'));
+      await tester.pump();
+
+      final copied = await clipboard.read();
+      // The block only, with its leading indentation intact and no trailing
+      // blank line: what a paste into an editor should produce.
+      expect(copied, 'def total(a, b):\n    return a + b');
+      expect(copied, isNot(contains('prose')));
+      // And the turn's own control is a different thing: it copies the whole.
+      expect(
+        find.byTooltip('Copy message'),
+        findsOneWidget,
+        reason: 'both controls coexist on one committed turn',
+      );
+    });
+
+    testWidgets('two blocks each carry their own button, and the tapped one ' 'is the one copied', (tester) async {
+      final clipboard = FakeClipboard(tester)..install();
+      const source =
+          'Text before.\n\n```python\nfirst_one()\n```\n\nAnd between.\n\n'
+          '```python\ndef second():\n    return 2\n```';
+      await tester.pumpWidget(
+        _app(
+          MessageBubble(
+            content: source,
+            isMine: false,
+            copyText: source,
+            createdAt: DateTime(2026, 1, 1, 9, 5),
+          ),
+        ),
+      );
+
+      expect(find.byTooltip('Copy code block'), findsNWidgets(2));
+
+      await tester.tap(find
+          .byTooltip('Copy code block')
+          .first);
+      await tester.pump();
+
+      final copied = await clipboard.read();
+      expect(copied, 'first_one()');
+      expect(copied, isNot(contains('second')));
+      expect(copied, isNot(contains('between')));
+    });
+
+    testWidgets('a reply with no fenced block carries no block control', (
+      tester,
+    ) async {
+      FakeClipboard(tester).install();
+      const source = '# Title\n\n- one\n\n> a quoted line\n';
+      await tester.pumpWidget(
+        _app(
+          MessageBubble(
+            content: source,
+            isMine: false,
+            copyText: source,
+            createdAt: DateTime(2026, 1, 1, 9, 5),
+          ),
+        ),
+      );
+
+      expect(find.byTooltip('Copy code block'), findsNothing);
+      // The turn's own control is still there, and it is the only one.
+      expect(find.byIcon(Icons.content_copy), findsOneWidget);
+    });
+
+    testWidgets('a second tap writes the clipboard again', (tester) async {
+      final clipboard = FakeClipboard(tester)..install();
+      await tester.pumpWidget(
+        _app(
+          MessageBubble(
+            content: 'first',
+            isMine: false,
+            copyText: 'first',
+            createdAt: DateTime(2026, 1, 1, 9, 5),
+          ),
+        ),
+      );
+
+      await tester.tap(find.byTooltip('Copy message'));
+      await tester.pump();
+      // The confirmation clears, then the control works again.
+      await tester.pump(const Duration(milliseconds: 1200));
+
+      await tester.tap(find.byTooltip('Copy message'));
+      await tester.pump();
+
+      expect(clipboard.writes, 2);
+      expect(await clipboard.read(), 'first');
+    });
+
+    testWidgets('a streaming partial block shows no button at all', (
+      tester,
+    ) async {
+      FakeClipboard(tester).install();
+      // The draft shape: an unterminated fence, no committed text to copy.
+      await tester.pumpWidget(
+        _app(
+          MessageBubble(
+            content: '```python\ndef total(a, b):\n',
+            isMine: false,
+            placeholderLabel: 'Thinking',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byTooltip('Copy code block'), findsNothing);
+      expect(find.byIcon(Icons.content_copy), findsNothing);
+      // The block still renders, scrolled rather than wrapped.
+      expect(
+        find.ancestor(
+          of: find.textContaining('def total'),
+          matching: find.byType(Scrollable),
+        ),
+        findsWidgets,
+      );
+    });
+
+    testWidgets('the block stays selectable text the way reply-rendering says', (
+      tester,
+    ) async {
+      FakeClipboard(tester).install();
+      const source = '```text\nhello selectable world\n```';
+      await tester.pumpWidget(
+        _app(
+          MessageBubble(
+            content: source,
+            isMine: false,
+            copyText: source,
+            createdAt: DateTime(2026, 1, 1, 9, 5),
+          ),
+        ),
+      );
+
+      final code = find.textContaining('hello selectable world');
+      final selectable = find.ancestor(
+        of: code,
+        matching: find.byType(SelectableText),
+      );
+      expect(selectable, findsOneWidget);
+      // The copy button is a separate tap target, and it does not cover the
+      // text it copies - so a press over code text is still a press over text.
+      expect(
+        tester
+            .getRect(selectable)
+            .intersect(tester.getRect(find.byTooltip('Copy code block')))
+            .isEmpty,
+        isTrue,
+      );
     });
 
     testWidgets('a blockquote renders as a quoted block', (tester) async {
@@ -498,6 +725,301 @@ echo "a line long enough to exceed the width of a narrow bubble on a phone"
       expect(
         renderedBlocks(tester, bubble()).join('\n'),
         contains('Section 59'),
+      );
+    });
+  });
+
+  group('copy control on a committed turn', () {
+    Finder copyBubble() => find.byType(MessageBubble);
+
+    const source =
+        'Some **text** with `code` and a line:\n\n```python\nprint("hi")\n```\n';
+    const typed = 'What is 10 * 5?\n\n# Notes\n- [ ] keep the hashes';
+
+    testWidgets('a committed turn offers a labelled copy control', (
+      tester,
+    ) async {
+      FakeClipboard(tester).install();
+      await tester.pumpWidget(
+        _app(
+          MessageBubble(
+            content: 'hello',
+            isMine: false,
+            copyText: 'hello',
+            createdAt: DateTime(2026, 1, 1, 9, 5),
+          ),
+        ),
+      );
+
+      expect(find.byIcon(Icons.content_copy), findsOneWidget);
+      expect(find.byTooltip('Copy message'), findsOneWidget);
+      // A plain icon control would miss the 48 dp target the guidelines ask for.
+      final target = tester.getSize(find.byType(IconButton));
+      expect(target.width, greaterThanOrEqualTo(48));
+      expect(target.height, greaterThanOrEqualTo(48));
+    });
+
+    testWidgets('a turn with no copy text offers no control at all', (
+      tester,
+    ) async {
+      FakeClipboard(tester).install();
+      // The in-flight shape: text has arrived, the reply is not committed.
+      await tester.pumpWidget(
+        _app(
+          MessageBubble(
+            content: 'Hel',
+            isMine: false,
+            placeholderLabel: 'Thinking',
+          ),
+        ),
+      );
+
+      expect(find.byIcon(Icons.content_copy), findsNothing);
+      expect(find.byTooltip('Copy message'), findsNothing);
+    });
+
+    testWidgets('the control sits beside the timestamp, not over the text', (
+      tester,
+    ) async {
+      FakeClipboard(tester).install();
+      await tester.pumpWidget(
+        _app(
+          MessageBubble(
+            content: 'hello',
+            isMine: false,
+            copyText: 'hello',
+            createdAt: DateTime(2026, 1, 1, 9, 5),
+          ),
+        ),
+      );
+
+      final row = find.descendant(
+        of: find.byType(MessageBubble),
+        matching: find.byType(Row),
+      );
+      expect(row, findsOneWidget);
+      expect(
+        find.descendant(of: row, matching: find.text('09:05')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: row,
+          matching: find.byIcon(Icons.content_copy),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('the control carries the bubble ink token, not a raw grey', (
+      tester,
+    ) async {
+      FakeClipboard(tester).install();
+      final theme = ThemeData();
+      await tester.pumpWidget(
+        _app(
+          MessageBubble(
+            content: 'hello',
+            isMine: false,
+            copyText: 'hello',
+            createdAt: DateTime(2026, 1, 1, 9, 5),
+          ),
+          theme: theme,
+        ),
+      );
+
+      expect(
+        tester.widget<IconButton>(find.byType(IconButton)).color,
+        theme.colorScheme.onSurface,
+      );
+
+      await tester.pumpWidget(
+        _app(
+          MessageBubble(
+            content: 'hello',
+            isMine: true,
+            copyText: 'hello',
+            createdAt: DateTime(2026, 1, 1, 9, 5),
+          ),
+          theme: theme,
+        ),
+      );
+
+      expect(
+        tester.widget<IconButton>(find.byType(IconButton)).color,
+        theme.colorScheme.onPrimaryContainer,
+      );
+    });
+
+    testWidgets('a tap copies an assistant turn in its markdown source', (
+      tester,
+    ) async {
+      final clipboard = FakeClipboard(tester)..install();
+      await tester.pumpWidget(
+        _app(
+          MessageBubble(
+            content: source,
+            isMine: false,
+            copyText: source,
+            createdAt: DateTime(2026, 1, 1, 9, 5),
+          ),
+        ),
+      );
+
+      await tester.tap(find.byTooltip('Copy message'));
+      await tester.pump();
+
+      final copied = await clipboard.read();
+      expect(copied, source);
+      // The rendering consumed the markup; the clipboard must not have.
+      expect(
+        renderedBlocks(tester, copyBubble()).join('\n'),
+        isNot(contains('**')),
+      );
+      expect(copied, contains('**text**'));
+      expect(copied, contains('print("hi")'));
+    });
+
+    testWidgets('a tap copies a user turn verbatim', (tester) async {
+      final clipboard = FakeClipboard(tester)..install();
+      await tester.pumpWidget(
+        _app(
+          MessageBubble(
+            content: typed,
+            isMine: true,
+            copyText: typed,
+            createdAt: DateTime(2026, 1, 1, 9, 5),
+          ),
+        ),
+      );
+
+      await tester.tap(find.byIcon(Icons.content_copy));
+      await tester.pump();
+
+      expect(await clipboard.read(), typed);
+    });
+
+    testWidgets('a copy of the blank fallback copies the text that is shown', (
+      tester,
+    ) async {
+      final clipboard = FakeClipboard(tester)..install();
+      await tester.pumpWidget(
+        _app(
+          MessageBubble(
+            content: '(no answer)',
+            isMine: false,
+            copyText: '(no answer)',
+            createdAt: DateTime(2026, 1, 1, 9, 5),
+          ),
+        ),
+      );
+
+      await tester.tap(find.byIcon(Icons.content_copy));
+      await tester.pump();
+
+      expect(await clipboard.read(), '(no answer)');
+    });
+
+    testWidgets('the copy is confirmed in place, then clears after a count', (
+      tester,
+    ) async {
+      FakeClipboard(tester).install();
+      final observer = _RouteCountingObserver();
+      await tester.pumpWidget(
+        _app(
+          MessageBubble(
+            content: 'hello',
+            isMine: false,
+            copyText: 'hello',
+            createdAt: DateTime(2026, 1, 1, 9, 5),
+          ),
+          observer: observer,
+        ),
+      );
+
+      final pushedBefore = observer.pushes;
+      await tester.tap(find.byIcon(Icons.content_copy));
+      await tester.pump();
+
+      expect(find.byIcon(Icons.check), findsOneWidget);
+      expect(find.byIcon(Icons.content_copy), findsNothing);
+
+      // Nothing else happened: no route, no surface to dismiss.
+      expect(observer.pushes, pushedBefore);
+      expect(find.byType(SnackBar), findsNothing);
+      expect(find.byType(BottomSheet), findsNothing);
+      expect(find.byType(Dialog), findsNothing);
+      expect(renderedBlocks(tester, copyBubble()), contains('hello'));
+
+      await tester.pump(const Duration(milliseconds: 1200));
+      expect(find.byIcon(Icons.check), findsNothing);
+      expect(find.byIcon(Icons.content_copy), findsOneWidget);
+    });
+
+    testWidgets('the copy is announced to a screen reader', (tester) async {
+      FakeClipboard(tester).install();
+      await tester.pumpWidget(
+        _app(
+          MessageBubble(
+            content: 'hello',
+            isMine: false,
+            copyText: 'hello',
+            createdAt: DateTime(2026, 1, 1, 9, 5),
+          ),
+        ),
+      );
+
+      Finder announced(String label) => find.byWidgetPredicate(
+        (widget) =>
+            widget is Semantics &&
+            widget.properties.liveRegion == true &&
+            widget.properties.label == label,
+      );
+      // Before the tap the node names the action it offers, and says it is a
+      // button - a tooltip alone does not reach the Android tree.
+      final idle = announced('Copy message');
+      expect(idle, findsOneWidget);
+      expect(tester.widget<Semantics>(idle).properties.button, isTrue);
+      expect(announced('Copied'), findsNothing);
+
+      await tester.tap(find.byIcon(Icons.content_copy));
+      await tester.pump();
+
+      expect(announced('Copied'), findsOneWidget);
+      expect(announced('Copy message'), findsNothing);
+    });
+
+    testWidgets('the largest text scale still reaches the copy control', (
+      tester,
+    ) async {
+      FakeClipboard(tester).install();
+      tester.view.physicalSize = const Size(360, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(
+        _app(
+          Builder(
+            builder: (context) => MediaQuery(
+              data: MediaQuery.of(
+                context,
+              ).copyWith(textScaler: const TextScaler.linear(3.0)),
+              child: MessageBubble(
+                content: 'hello there',
+                isMine: false,
+                copyText: 'hello there',
+                createdAt: DateTime(2026, 1, 1, 9, 5),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      expect(tester.takeException(), isNull);
+      expect(find.byIcon(Icons.content_copy), findsOneWidget);
+      expect(
+        tester.getSize(find.byType(IconButton)).width,
+        greaterThanOrEqualTo(48),
       );
     });
   });

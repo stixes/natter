@@ -96,6 +96,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                             final message = messages[index];
                             return MessageBubble(
                               content: message.content,
+                              // A committed turn can be copied; the control
+                              // offers exactly the text stored for that turn.
+                              copyText: message.content,
                               isMine: message.role == ChatRole.user,
                               createdAt: message.createdAt,
                             );
