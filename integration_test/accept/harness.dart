@@ -473,3 +473,47 @@ List<String> timestampLabels(WidgetTester tester) => [
       for (final text in tester.widgetList<Text>(find.byType(Text)))
         if (text.data != null && timePattern.hasMatch(text.data!)) text.data!,
     ];
+
+// Copy affordances (message-copy-actions).
+//
+// The controls are labelled rather than gesture-only, so a scenario can name
+// the thing it taps. The whole-turn control and a code block's button share
+// `Icons.content_copy`, which is why [copyControls] also keys on the label -
+// otherwise a block's button would slip into a turn-count assertion.
+
+/// The whole-turn copy controls on screen, in transcript order.
+Finder copyControls() => find.byWidgetPredicate((widget) {
+      if (widget is! IconButton) return false;
+      if (widget.tooltip != 'Copy message') return false;
+      final icon = widget.icon;
+      return icon is Icon && icon.icon == Icons.content_copy;
+    });
+
+/// A rendered code block's own copy buttons, by their label.
+Finder codeBlockCopyButtons() => find.byTooltip('Copy code block');
+
+/// The confirmation a copy leaves behind, before it clears on its own timer.
+Finder copyConfirmations() => find.byWidgetPredicate((widget) {
+      if (widget is! IconButton) return false;
+      final icon = widget.icon;
+      return icon is Icon && icon.icon == Icons.check;
+    });
+
+/// The device clipboard, read back through the real platform channel - the
+/// suite's only way to say what a tap actually put there, as opposed to what
+/// the app intended to put there.
+///
+/// Null means the read failed or the clipboard is empty, which is not what any
+/// copy scenario expects; callers assert on the text itself.
+Future<String?> clipboardText() async =>
+    (await Clipboard.getData(Clipboard.kTextPlain))?.text;
+
+/// Taps [control] and returns what the clipboard holds afterwards.
+///
+/// The pump is here rather than at the call sites because the write and the
+/// icon swap both land on the frame the tap schedules.
+Future<String?> tapCopy(WidgetTester tester, Finder control) async {
+  await tester.tap(control.first);
+  await tick(tester);
+  return clipboardText();
+}

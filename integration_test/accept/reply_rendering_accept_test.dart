@@ -3,7 +3,9 @@
 // Scenario map (openspec/changes/render-markdown-replies/specs/):
 //   - Assistant replies render as markdown .. a scripted reply carrying a
 //     heading, bold, inline code, and a fenced block arrives formatted, with
-//     the markup characters gone from what is drawn
+//     the markup characters gone from what is drawn; the block also carries the
+//     copy button that the `Code blocks stay readable` requirement now names
+//     (message-copy-actions), and its sideways scroll still reaches the tail
 //   - User turns stay verbatim .............. the same markup, sent by the
 //     user, is drawn literally
 //   - Live rendering during a stream ........ a multi-chunk reply that opens a
@@ -48,7 +50,10 @@ void main() {
       scriptNormalStream(endpoint, chunks: [
         '# Acceptance heading\n\n',
         'Some **bold** and `inline code`.\n\n',
-        '```text\nfenced( \'code\' );\n```\n',
+        '```text\nfenced( \'code\' );\n'
+        'a_single_line_long_enough_to_exceed_the_bubble_'
+        'width_so_its_tail_sits_behind_a_scroll\n',
+        '```\n',
       ]);
       await awaitExchange(tester, endpoint, '$stamp markdown reply probe');
 
@@ -78,6 +83,38 @@ void main() {
       expect(hasAssistantBubbleWith(tester, '# Acceptance heading'), isTrue,
           reason: 'the stored turn must keep its raw markdown');
       expect(hasAssistantBubbleWith(tester, '**bold**'), isTrue);
+
+      // The block now carries a copy button of its own (message-copy-actions),
+      // and the button takes nothing away: the long line still overflows the
+      // bubble and a sideways drag brings its tail back into view.
+      expect(codeBlockCopyButtons(), findsOneWidget,
+          reason: 'a rendered block carries the button its requirement names');
+      final blockScroll = find
+          .ancestor(
+            of: find.textContaining("fenced( 'code' );"),
+            matching: find.byType(Scrollable),
+          )
+          .first;
+      final position = tester.state<ScrollableState>(blockScroll).position;
+      expect(position.axis, Axis.horizontal);
+      expect(position.maxScrollExtent, greaterThan(0),
+          reason: 'the long line must overflow the bubble');
+      expect(tester.getTopRight(find.textContaining('behind_a_scroll')).dx,
+          greaterThan(tester.getTopRight(blockScroll).dx),
+          reason: 'the tail starts outside the bubble');
+      // Driven by the scroll position rather than a swipe: a synthetic drag at
+      // the block's centre is swallowed by the selectable text inside it, so a
+      // real swipe is the on-device round's business, as it is in
+      // test/message_bubble_test.dart. What this scenario owns is that the
+      // scroll extent is there to be reached, and that the tail follows it.
+      position.jumpTo(position.maxScrollExtent);
+      await tick(tester);
+      expect(position.pixels, position.maxScrollExtent);
+      expect(
+        tester.getTopRight(find.textContaining('behind_a_scroll')).dx,
+        lessThanOrEqualTo(tester.getTopRight(blockScroll).dx + 1),
+        reason: 'the scrolled tail must sit inside the bubble',
+      );
     },
     timeout: const Timeout(Duration(minutes: 2)),
   );
