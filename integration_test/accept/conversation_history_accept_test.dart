@@ -2,13 +2,14 @@
 //
 // Scenario map (openspec/specs/conversation-history/spec.md):
 //   - Conversation list and switching .. two chats appear in the drawer,
-//     opening one loads its stored turns, and relaunching the app restores
-//     the most recent conversation from durable storage
+//     opening one loads its stored turns, and relaunching the app opens a
+//     new chat while the drawer still lists the stored chats from durable
+//     storage
 //
 // The relaunch re-runs app.main() in the same process: a fresh provider
 // container and a fresh Drift connection reading the device's database file.
-// That proves restore-from-storage; a true process kill stays a manual round
-// recorded in validation.md.
+// That proves the launch-on-new-chat contract over the same storage; a true
+// process kill stays a manual round recorded in validation.md.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -80,14 +81,26 @@ void main() {
       expect(hasAssistantBubbleWith(tester, 'Beta reply'), isFalse,
           reason: 'the opened conversation replaces what was on screen');
 
-      // Relaunch: restoreMostRecent in main() must reopen the newest chat
-      // (beta) from the database, not from memory.
+      // Relaunch: main() opens a new chat - the empty state on screen, with
+      // both stored chats still reachable from the drawer's durable storage.
       await app.main();
       await settle(tester);
-      expect(hasAssistantBubbleWith(tester, 'Beta reply'), isTrue,
-          reason: 'relaunch must restore the most recent conversation');
-      expect(hasAssistantBubbleWith(tester, 'Alpha reply'), isFalse,
-          reason: 'the restored screen must show only the newest chat');
+      expect(find.text('Say something.'), findsOneWidget,
+          reason: 'relaunch must land on the Empty state, not a stored chat');
+      expect(hasAssistantBubbleWith(tester, 'Beta reply'), isFalse,
+          reason: 'no stored conversation may be restored at launch');
+      expect(hasAssistantBubbleWith(tester, 'Alpha reply'), isFalse);
+
+      await openDrawer(tester);
+      await waitForDrawerTile(tester, '$stamp beta first');
+      expect(
+        find.descendant(
+          of: find.byType(Drawer),
+          matching: find.text('$stamp beta first'),
+        ),
+        findsOneWidget,
+        reason: 'the relaunched drawer must still list the stored chats',
+      );
     },
     timeout: const Timeout(Duration(minutes: 4)),
   );
