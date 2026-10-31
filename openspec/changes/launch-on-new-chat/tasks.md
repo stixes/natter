@@ -18,7 +18,7 @@
 ## 4. Wrap-up
 
 - [x] 4.1 Add a `CHANGELOG.md` entry in user-facing wording (app opens on a new chat; previous chats open from the history list). Check: entry reads as behavior, not commit-speak.
-- [ ] 4.2 Publishable-hygiene scan per AGENTS.md (every blob in `git rev-list --all`, then the pushed tree) and confirm the CI verdict on the pushed commit (`gh run list --branch <branch> --limit 1`). Check: scan clean; verdict green or a recorded reason.
+- [x] 4.2 Publishable-hygiene scan per AGENTS.md (every blob in `git rev-list --all`, then the pushed tree) and confirm the CI verdict on the pushed commit (`gh run list --branch <branch> --limit 1`). Check: scan clean; verdict green or a recorded reason.
 
 ## Workflow follow-up
 

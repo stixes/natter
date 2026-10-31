@@ -2,6 +2,19 @@
 
 Notes here are user-facing, not commit-speak.
 
+## launch-on-new-chat
+
+Open the app and start talking. No previous chat gets in the way.
+
+- Launching Natter now opens a new, empty chat. Type and send; the reply comes
+  back in that new chat. Before, the app reopened the last conversation you were
+  in, so a first message could land in an old chat without you noticing.
+- Every earlier chat is one tap away: the history list at the top left still
+  shows them, grouped by day, and opening one puts it on screen with its turns
+  intact. Nothing was removed from storage.
+- A chat you were in stays put when you leave and come back - switching to
+  another app and returning finds the same conversation, mid-reply and all.
+
 ## message-copy-actions
 
 Copy a reply, a turn, or a single code block without selecting any of it first.

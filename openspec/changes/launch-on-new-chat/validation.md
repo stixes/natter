@@ -87,9 +87,31 @@ in `2026-10-24-local-conversation-history/validation.md` (task 6.2, steps 3-6:
 the conversation was restored from storage"). That step asserted the behavior
 this change reverses; the equivalent steps above assert the new one.
 
+## CI verdict and the publishable scan (task 4.2)
+
+- CI on the pushed commit (`gh run list --branch main --limit 1`): run
+  `41200962066`, `completed success`, 11m26s. Its `checks` job reports
+  `230 tests passed`; its `accept` job, on a throwaway emulator inside the
+  runner, reports `21 tests passed` - the whole suite, every scenario, with the
+  flipped relaunch leg in place. That run is the clean whole-suite verdict the
+  local rounds above read only in part, and it closes the gap round 2 left in
+  `system_prompt_accept_test.dart`.
+- Publishable scan: the file content of every blob with a path in
+  `git rev-list --all` grepped for hosts, devices, tailnet names and addresses,
+  mail addresses, and key material - no hits; the same patterns over the pushed
+  tree (`git ls-tree -r origin/main`) - no hits. Widening that scan to commit
+  objects rather than only file content matches the committer identity lines,
+  which is git's own record of who authored a commit, not material a commit
+  carries in a file.
+
 ## Debt, named
 
-- None open for this change. The true process-kill round that the accept-test
-  header called manual is recorded above, and the acceptance suite's relaunch
-  leg now pins the launch-on-new-chat contract in CI, so no round is left to
-  run by hand.
+- **A gate flake, named.** The round-2 break in `system_prompt_accept_test.dart`
+  is not pinned by anything, because there is nothing to pin - the file's own
+  re-run is the check, and it came back green. A whole-suite run that loses the
+  device connection mid-file is the shape of it; CI's throwaway emulator did not
+  reproduce it on this commit.
+- None otherwise open for this change. The true process-kill round that the
+  accept-test header called manual is recorded above, and the acceptance suite's
+  relaunch leg now pins the launch-on-new-chat contract in CI, so no round is
+  left to run by hand.
