@@ -172,26 +172,6 @@ class ConversationController extends Notifier<ConversationState> {
   ConversationRepository get _repository =>
       ref.read(conversationRepositoryProvider);
 
-  /// Restores the most recent saved conversation, if any.
-  ///
-  /// A read failure leaves the conversation empty and surfaces a dismissible
-  /// [ConversationState.historyNotice] so the screen stays usable.
-  Future<void> restoreMostRecent() async {
-    try {
-      final summary = await _repository.loadMostRecent();
-      if (summary == null) return;
-      final messages = await _repository.loadMessages(summary.id);
-      state = ConversationState(
-        conversationId: summary.id,
-        messages: messages,
-      );
-    } catch (_) {
-      state = const ConversationState(
-        historyNotice: 'History could not be loaded.',
-      );
-    }
-  }
-
   static int _sequence = 0;
   static const _titleLimit = 48;
 

@@ -33,8 +33,6 @@ Future<void> main() async {
     debugPrint('Startup expiry cleanup failed: $error');
   }
 
-  await container.read(conversationProvider.notifier).restoreMostRecent();
-
   runApp(
     UncontrolledProviderScope(
       container: container,

@@ -483,8 +483,8 @@ void main() {
     });
   });
 
-  group('history restore', () {
-    test('restores the most recent saved conversation', () async {
+  group('start on a new chat', () {
+    test('a start makes no history read even when history is stored', () async {
       final summary = ConversationSummary(
         id: 'saved',
         title: 'Saved conversation',
@@ -506,31 +506,55 @@ void main() {
         ],
       );
       final t = createTestContainer(repository: repository);
-      final notifier = t.container.read(conversationProvider.notifier);
-
-      await notifier.restoreMostRecent();
 
       final state = t.container.read(conversationProvider);
-      expect(state.conversationId, 'saved');
-      expect(state.messages.map((m) => m.content).toList(), ['hello', 'hi']);
+      expect(
+        state.conversationId,
+        isNull,
+        reason: 'the start opens a new chat, not the stored conversation',
+      );
+      expect(state.messages, isEmpty);
       expect(state.historyNotice, isNull);
       expect(state.draft, isNull);
       expect(state.error, isNull);
     });
 
-    test('a load failure starts empty with a history notice', () async {
+    test('a start stays empty-negotiable even when history is unreadable',
+        () async {
       final repository = FakeConversationRepository()
         ..loadError = StateError('history unavailable');
       final t = createTestContainer(repository: repository);
-      final notifier = t.container.read(conversationProvider.notifier);
-
-      await notifier.restoreMostRecent();
 
       final state = t.container.read(conversationProvider);
       expect(state.messages, isEmpty);
       expect(state.conversationId, isNull);
-      expect(state.historyNotice, isNotNull);
+      expect(
+        state.historyNotice,
+        isNull,
+        reason: 'with no startup read there is no startup notice',
+      );
       expect(state.error, isNull);
+    });
+
+    test('a mid-reply exit leaves the user turn in storage', () async {
+      final t = createTestContainer();
+      await t.container.read(profileProvider.notifier).save(testProfile);
+      final notifier = t.container.read(conversationProvider.notifier);
+
+      notifier.send('half-way question');
+      await settle();
+      t.service.emit(0, const [StreamDelta(content: 'partial')]);
+      await settle();
+
+      final summary = await t.repository.loadMostRecent();
+      expect(summary, isNotNull, reason: 'the chat itself is stored');
+      final stored = await t.repository.loadMessages(summary!.id);
+      expect(stored.map((m) => m.content).toList(), ['half-way question']);
+      expect(
+        stored.every((m) => m.role == ChatRole.user),
+        isTrue,
+        reason: 'the incomplete assistant reply is absent from storage',
+      );
     });
   });
 
