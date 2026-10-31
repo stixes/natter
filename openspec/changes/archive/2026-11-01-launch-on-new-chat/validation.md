@@ -87,6 +87,37 @@ in `2026-10-24-local-conversation-history/validation.md` (task 6.2, steps 3-6:
 the conversation was restored from storage"). That step asserted the behavior
 this change reverses; the equivalent steps above assert the new one.
 
+## Phone round (after archiving, 2026-11-01)
+
+A second device, because the archive review asked whether a release build had
+even been looked at on real hardware: the physical `<device>` (a phone
+over its wireless adb connection), carrying the `--release` build installed by
+uninstall plus install, since the dev container had been rebuilt and its debug
+keystore no longer matched what the phone held. Config entered through the
+app's own Settings screen by adb taps: the plain HTTP port on
+`<llama-swap-host>`'s tailnet address, no key, model as the gateway names it.
+
+What it showed:
+
+1. A sent turn streamed a markdown reply with bullet lists, and the turn
+   landed with a timestamp and the copy affordance. The drawer listed the chat
+   under `Today` and reopening it put every turn back in order.
+2. `am force-stop` then a launcher start opened the `Say something.` empty
+   state over a bare composer, with the stored chat still listed in the
+   drawer - the shipped contract on real hardware.
+3. Home mid-stream then a relaunch kept the conversation on screen, and a
+   composer draft that had been typed but not sent survived the backgrounding.
+4. One leg went wrong first: the base URL was set to the wrong port and the
+   endpoint answered `405 {"detail":"Method Not Allowed"}`. The app showed it
+   as an error banner with a Retry affordance over an empty transcript, no
+   crash, and the retry path was reachable. The wrong port was not llama-swap.
+
+Uninstall plus install is the only route once the container's key changes, and
+it wipes the phone's history and config, so it was confirmed with the user
+first; no data rescue route exists on that build (`allowBackup=false`, release
+not debuggable, no root on the device). Left in place afterwards: one chat and
+the endpoint config on the phone.
+
 ## CI verdict and the publishable scan (task 4.2)
 
 - CI on the pushed commit (`gh run list --branch main --limit 1`): run
